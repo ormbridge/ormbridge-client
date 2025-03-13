@@ -1,9 +1,36 @@
 import { QuerySet } from "../flavours/django/querySet";
+import { Model } from "../flavours/django/model";
 import { liveView } from "../core/liveView";
+// Note: Only importing types from Vue in the types file.
 
-// Import Vue directly - the parent entry point (src/vue.js) will handle the error checking
-// We can use a regular import here since this file will only be used when Vue is available
-import * as Vue from "vue";
+let isVueAvailable = false;
+
+// Try to import Vue without breaking the app.
+try {
+  import("vue")
+    .then(() => {
+      isVueAvailable = true;
+    })
+    .catch(() => {
+      isVueAvailable = false;
+    });
+} catch (e) {
+  isVueAvailable = false;
+}
+
+/**
+ * Helper function to safely get Vue.
+ * Returns a promise that resolves to the Vue module or rejects if not available.
+ *
+ * @returns {Promise<any>}
+ */
+async function getVue() {
+  try {
+    return await import("vue");
+  } catch (e) {
+    throw new Error("Vue 3 is required for this feature");
+  }
+}
 
 /**
  * Creates a Vue 3 Composition API compatible LiveQuerySet.
@@ -17,7 +44,7 @@ import * as Vue from "vue";
  * // In a Vue component using the Composition API:
  * import { ref, onBeforeUnmount } from 'vue';
  * import { User } from '@/models';
- * import { createVueLiveView } from '@ormbridge/core/vue';
+ * import { createVueLiveView } from 'your-library/adaptors/vue';
  * 
  * const users = ref([]);
  * let usersQuery = null;
@@ -59,7 +86,7 @@ export async function createVueLiveView(qs, refValue, options) {
  * @example
  * // In a Vue component using the Composition API:
  * import { User } from '@/models';
- * import { useVueLiveView } from '@ormbridge/core/vue';
+ * import { useVueLiveView } from 'your-library/adaptors/vue';
  * 
  * const useComposable = await useVueLiveView(User.objects.all());
  * const { data: users, query: usersQuery, loading } = useComposable();
@@ -69,35 +96,46 @@ export async function createVueLiveView(qs, refValue, options) {
  * };
  */
 export async function useVueLiveView(qs, options) {
-  const { ref, onMounted, onBeforeUnmount } = Vue;
-  
-  // Return a composable function to be used in setup()
-  return function useComposable() {
-    const data = ref([]);
-    const query = ref(null);
-    const loading = ref(true);
+  try {
+    const vue = await getVue();
+    const { ref, onMounted, onBeforeUnmount } = vue;
     
-    onMounted(async () => {
-      try {
-        query.value = await createVueLiveView(qs, data, options);
-        await query.value.fetch();
-      } finally {
-        loading.value = false;
-      }
-    });
+    if (!ref || !onMounted || !onBeforeUnmount) {
+      throw new Error("Vue 3 is required for useVueLiveView");
+    }
     
-    onBeforeUnmount(() => {
-      if (query.value) {
-        query.value.destroy();
-      }
-    });
-    
-    return {
-      data,
-      query,
-      loading
+    // Return a composable function to be used in setup()
+    return function useComposable() {
+      const data = ref([]);
+      const query = ref(null);
+      const loading = ref(true);
+      
+      onMounted(async () => {
+        try {
+          query.value = await createVueLiveView(qs, data, options);
+          await query.value.fetch();
+        } finally {
+          loading.value = false;
+        }
+      });
+      
+      onBeforeUnmount(() => {
+        if (query.value) {
+          query.value.destroy();
+        }
+      });
+      
+      return {
+        data,
+        query,
+        loading
+      };
     };
-  };
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : String(error);
+    throw new Error("Vue 3 is required for useVueLiveView: " + errorMessage);
+  }
 }
 
 /**
@@ -112,7 +150,7 @@ export async function useVueLiveView(qs, options) {
  * @example
  * // In a Vue Options API component:
  * import { User } from '@/models';
- * import { createVueOptionsMixin } from '@ormbridge/core/vue';
+ * import { createVueOptionsMixin } from 'your-library/adaptors/vue';
  * 
  * export default {
  *   mixins: [await createVueOptionsMixin(User.objects.all())],
@@ -124,33 +162,41 @@ export async function useVueLiveView(qs, options) {
  * };
  */
 export async function createVueOptionsMixin(qs, propName = "items", queryName = "itemsQuery", options) {
-  return {
-    data() {
-      const dataObj = {};
-      dataObj[propName] = [];
-      dataObj[queryName] = null;
-      dataObj[`${propName}Loading`] = true;
-      return dataObj;
-    },
+  try {
+    const vue = await getVue();
     
-    async mounted() {
-      try {
-        // Use the reactive array from the component's data.
-        const reactiveArray = this[propName];
-        // Create the LiveQuerySet.
-        this[queryName] = await liveView(qs, reactiveArray, options);
-        // Fetch initial data.
-        await this[queryName].fetch();
-      } finally {
-        this[`${propName}Loading`] = false;
+    return {
+      data() {
+        const dataObj = {};
+        dataObj[propName] = [];
+        dataObj[queryName] = null;
+        dataObj[`${propName}Loading`] = true;
+        return dataObj;
+      },
+      
+      async mounted() {
+        try {
+          // Use the reactive array from the component's data.
+          const reactiveArray = this[propName];
+          // Create the LiveQuerySet.
+          this[queryName] = await liveView(qs, reactiveArray, options);
+          // Fetch initial data.
+          await this[queryName].fetch();
+        } finally {
+          this[`${propName}Loading`] = false;
+        }
+      },
+      
+      beforeUnmount() {
+        if (this[queryName]) {
+          this[queryName].destroy();
+          this[queryName] = null;
+        }
       }
-    },
-    
-    beforeUnmount() {
-      if (this[queryName]) {
-        this[queryName].destroy();
-        this[queryName] = null;
-      }
-    }
-  };
+    };
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : String(error);
+    throw new Error("Vue 3 is required for createVueOptionsMixin: " + errorMessage);
+  }
 }

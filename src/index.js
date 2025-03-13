@@ -11,3 +11,17 @@ export * from './flavours/django/model.js';
 export * from './flavours/django/createModelInstance.js';
 export * from './flavours/django/modelSummary.js';
 export * from './config.js';
+
+// Import from adaptors with their new function names
+import { useReactLiveView } from './adaptors/react.js';
+import { useVueLiveView, createVueLiveView } from './adaptors/vue.js';
+
+// Export all functions with consistent naming
+export {
+  // React exports
+  useReactLiveView,
+  
+  // Vue exports
+  useVueLiveView,
+  createVueLiveView,
+};

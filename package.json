@@ -12,22 +12,11 @@
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     },
     "./cli": {
       "import": "./dist/cli/index.js",
       "require": "./dist/cli/index.js"
-    },
-    "./react": {
-      "import": "./dist/react.js",
-      "require": "./dist/react.js",
-      "types": "./dist/react.d.ts"
-    },
-    "./vue": {
-      "import": "./dist/vue.js",
-      "require": "./dist/vue.js",
-      "types": "./dist/vue.d.ts"
     }
   },
   "scripts": {
@@ -85,18 +74,6 @@
     "uuid": "^11.1.0",
     "yargs": "^17.7.2",
     "yup": "^1.6.1"
-  },
-  "peerDependencies": {
-    "react": "^16.8.0 || ^17.0.0 || ^18.0.0",
-    "vue": "^3.0.0 || ^3.2.0"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    },
-    "vue": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@playwright/test": "^1.50.1",
