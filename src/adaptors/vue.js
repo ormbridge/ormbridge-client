@@ -1,36 +1,32 @@
-import { QuerySet } from "../flavours/django/querySet";
-import { Model } from "../flavours/django/model";
-import { liveView } from "../core/liveView";
-// Note: Only importing types from Vue in the types file.
+// adaptors/vue.js
+import { liveView } from "../core/liveView.js";
 
-let isVueAvailable = false;
+// Create placeholder functions that will be replaced if Vue is available
+let ref = () => {
+  throw new Error('Vue is required for Vue adaptors but was not found');
+};
 
-// Try to import Vue without breaking the app.
-try {
-  import("vue")
-    .then(() => {
-      isVueAvailable = true;
-    })
-    .catch(() => {
-      isVueAvailable = false;
-    });
-} catch (e) {
-  isVueAvailable = false;
-}
+let onMounted = () => {
+  throw new Error('Vue is required for Vue adaptors but was not found');
+};
 
-/**
- * Helper function to safely get Vue.
- * Returns a promise that resolves to the Vue module or rejects if not available.
- *
- * @returns {Promise<any>}
- */
-async function getVue() {
+let onBeforeUnmount = () => {
+  throw new Error('Vue is required for Vue adaptors but was not found');
+};
+
+// Try to load Vue using dynamic import - this won't block bundling
+(async () => {
   try {
-    return await import("vue");
+    const Vue = await import('vue');
+    // If we get here, Vue is available, so update the functions
+    ref = Vue.ref;
+    onMounted = Vue.onMounted;
+    onBeforeUnmount = Vue.onBeforeUnmount;
   } catch (e) {
-    throw new Error("Vue 3 is required for this feature");
+    // Vue isn't available, keep using the placeholders
+    console.debug('Vue not available, Vue adaptors will throw if used');
   }
-}
+})();
 
 /**
  * Creates a Vue 3 Composition API compatible LiveQuerySet.
@@ -39,40 +35,16 @@ async function getVue() {
  * @param {object|Array} refValue - A Vue ref (object with a 'value' property) or a raw array to sync with.
  * @param {any} [options] - Options for the LiveQuerySet.
  * @returns {Promise<any>} Promise that resolves to a LiveQuerySet instance.
- *
- * @example
- * // In a Vue component using the Composition API:
- * import { ref, onBeforeUnmount } from 'vue';
- * import { User } from '@/models';
- * import { createVueLiveView } from 'your-library/adaptors/vue';
- * 
- * const users = ref([]);
- * let usersQuery = null;
- * 
- * createVueLiveView(User.objects.all(), users)
- *   .then(query => {
- *     usersQuery = query;
- *   });
- * 
- * onBeforeUnmount(() => {
- *   if (usersQuery) {
- *     usersQuery.destroy();
- *   }
- * });
- *
- * const addUser = async () => {
- *   await usersQuery.create({ name: 'New User' });
- * };
  */
 export async function createVueLiveView(qs, refValue, options) {
   // Determine if we're given a ref (an object with a 'value' property)
   const isRef = typeof refValue === "object" && "value" in refValue;
   const reactiveArray = isRef ? refValue.value : refValue;
   
-  // Create the LiveQuerySet with the reactive array.
+  // Create the LiveQuerySet with the reactive array
   const lqs = await liveView(qs, reactiveArray, options);
   
-  // For Vue 3, reactivity is automatic via proxies.
+  // For Vue 3, reactivity is automatic via proxies
   return lqs;
 }
 
@@ -81,61 +53,36 @@ export async function createVueLiveView(qs, refValue, options) {
  *
  * @param {QuerySet} qs - The QuerySet to make live.
  * @param {any} [options] - Options for the LiveQuerySet.
- * @returns {Promise<Function>} A function that, when called, returns an object with `data`, `query` and `loading` refs.
- *
- * @example
- * // In a Vue component using the Composition API:
- * import { User } from '@/models';
- * import { useVueLiveView } from 'your-library/adaptors/vue';
- * 
- * const useComposable = await useVueLiveView(User.objects.all());
- * const { data: users, query: usersQuery, loading } = useComposable();
- *
- * const addUser = async () => {
- *   await usersQuery.value.create({ name: 'New User' });
- * };
+ * @returns {Function} A function that, when called, returns an object with `data`, `query` and `loading` refs.
  */
-export async function useVueLiveView(qs, options) {
-  try {
-    const vue = await getVue();
-    const { ref, onMounted, onBeforeUnmount } = vue;
+export function useVueLiveView(qs, options) {
+  // Return a composable function to be used in setup()
+  return function useComposable() {
+    const data = ref([]);
+    const query = ref(null);
+    const loading = ref(true);
     
-    if (!ref || !onMounted || !onBeforeUnmount) {
-      throw new Error("Vue 3 is required for useVueLiveView");
-    }
+    onMounted(async () => {
+      try {
+        query.value = await createVueLiveView(qs, data, options);
+        await query.value.fetch();
+      } finally {
+        loading.value = false;
+      }
+    });
     
-    // Return a composable function to be used in setup()
-    return function useComposable() {
-      const data = ref([]);
-      const query = ref(null);
-      const loading = ref(true);
-      
-      onMounted(async () => {
-        try {
-          query.value = await createVueLiveView(qs, data, options);
-          await query.value.fetch();
-        } finally {
-          loading.value = false;
-        }
-      });
-      
-      onBeforeUnmount(() => {
-        if (query.value) {
-          query.value.destroy();
-        }
-      });
-      
-      return {
-        data,
-        query,
-        loading
-      };
+    onBeforeUnmount(() => {
+      if (query.value) {
+        query.value.destroy();
+      }
+    });
+    
+    return {
+      data,
+      query,
+      loading
     };
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
-    throw new Error("Vue 3 is required for useVueLiveView: " + errorMessage);
-  }
+  };
 }
 
 /**
@@ -145,58 +92,36 @@ export async function useVueLiveView(qs, options) {
  * @param {string} [propName='items'] - The data property name for the items.
  * @param {string} [queryName='itemsQuery'] - The data property name for the query.
  * @param {any} [options] - Options for the LiveQuerySet.
- * @returns {Promise<object>} A Vue mixin object.
- *
- * @example
- * // In a Vue Options API component:
- * import { User } from '@/models';
- * import { createVueOptionsMixin } from 'your-library/adaptors/vue';
- * 
- * export default {
- *   mixins: [await createVueOptionsMixin(User.objects.all())],
- *   methods: {
- *     async addUser() {
- *       await this.itemsQuery.create({ name: 'New User' });
- *     }
- *   }
- * };
+ * @returns {object} A Vue mixin object.
  */
-export async function createVueOptionsMixin(qs, propName = "items", queryName = "itemsQuery", options) {
-  try {
-    const vue = await getVue();
+export function createVueOptionsMixin(qs, propName = "items", queryName = "itemsQuery", options) {
+  return {
+    data() {
+      const dataObj = {};
+      dataObj[propName] = [];
+      dataObj[queryName] = null;
+      dataObj[`${propName}Loading`] = true;
+      return dataObj;
+    },
     
-    return {
-      data() {
-        const dataObj = {};
-        dataObj[propName] = [];
-        dataObj[queryName] = null;
-        dataObj[`${propName}Loading`] = true;
-        return dataObj;
-      },
-      
-      async mounted() {
-        try {
-          // Use the reactive array from the component's data.
-          const reactiveArray = this[propName];
-          // Create the LiveQuerySet.
-          this[queryName] = await liveView(qs, reactiveArray, options);
-          // Fetch initial data.
-          await this[queryName].fetch();
-        } finally {
-          this[`${propName}Loading`] = false;
-        }
-      },
-      
-      beforeUnmount() {
-        if (this[queryName]) {
-          this[queryName].destroy();
-          this[queryName] = null;
-        }
+    async mounted() {
+      try {
+        // Use the reactive array from the component's data
+        const reactiveArray = this[propName];
+        // Create the LiveQuerySet
+        this[queryName] = await liveView(qs, reactiveArray, options);
+        // Fetch initial data
+        await this[queryName].fetch();
+      } finally {
+        this[`${propName}Loading`] = false;
       }
-    };
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
-    throw new Error("Vue 3 is required for createVueOptionsMixin: " + errorMessage);
-  }
+    },
+    
+    beforeUnmount() {
+      if (this[queryName]) {
+        this[queryName].destroy();
+        this[queryName] = null;
+      }
+    }
+  };
 }

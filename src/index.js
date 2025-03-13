@@ -1,10 +1,8 @@
-// index.js - Main entry point with simple dynamic imports
-
-// Core exports - these are always available
+// Main entry point re-exporting core modules
 export * from './core/eventReceivers.js';
 export * from './core/liveView.js';
 
-// Export Django flavor modules - always available
+// Export Django flavor modules
 export * from './flavours/django/q.js';
 export * from './flavours/django/errors.js';
 export * from './flavours/django/querySet.js';
@@ -14,41 +12,16 @@ export * from './flavours/django/createModelInstance.js';
 export * from './flavours/django/modelSummary.js';
 export * from './config.js';
 
-// React adaptor export with dynamic import
-export function useReactLiveView(...args) {
-  // Attempt to dynamically import React
-  return import('react')
-    .then(() => import('./adaptors/react.js'))
-    .then(module => module.useReactLiveView(...args))
-    .catch(e => {
-      throw new Error('React is required for useReactLiveView');
-    });
-}
+// Import from adaptors with their new function names
+import { useReactLiveView } from './adaptors/react.js';
+import { useVueLiveView, createVueLiveView } from './adaptors/vue.js';
 
-// Vue adaptor exports with dynamic imports
-export function useVueLiveView(...args) {
-  return import('vue')
-    .then(() => import('./adaptors/vue.js'))
-    .then(module => module.useVueLiveView(...args))
-    .catch(e => {
-      throw new Error('Vue is required for useVueLiveView');
-    });
-}
-
-export function createVueLiveView(...args) {
-  return import('vue')
-    .then(() => import('./adaptors/vue.js'))
-    .then(module => module.createVueLiveView(...args))
-    .catch(e => {
-      throw new Error('Vue is required for createVueLiveView');
-    });
-}
-
-export function createVueOptionsMixin(...args) {
-  return import('vue')
-    .then(() => import('./adaptors/vue.js'))
-    .then(module => module.createVueOptionsMixin(...args))
-    .catch(e => {
-      throw new Error('Vue is required for createVueOptionsMixin');
-    });
-}
+// Export all functions with consistent naming
+export {
+  // React exports
+  useReactLiveView,
+  
+  // Vue exports
+  useVueLiveView,
+  createVueLiveView,
+};
