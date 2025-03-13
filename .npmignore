@@ -1,0 +1,28 @@
+# Only publish the compiled output 
+src/
+tests/
+scripts/
+
+# Test artifacts
+coverage/
+
+# Config files
+.gitignore
+.npmignore
+
+# Dev files
+node_modules/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log
+.pnpm-debug.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
