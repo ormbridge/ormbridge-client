@@ -78,7 +78,7 @@ pip install django-cors-headers pusher
 
 ```bash
 # In your React/Vue project
-npm install github:ormbridge/ormbridge-client
+npm install https://github.com/ormbridge/ormbridge-client
 ```
 
 ### 3. Generate TypeScript Models

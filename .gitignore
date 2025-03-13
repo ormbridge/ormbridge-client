@@ -4,6 +4,7 @@ npm-debug.log
 yarn-debug.log
 yarn-error.log
 .pnpm-debug.log
+package-lock.json
 
 # Config
 ormbridge.config.js
@@ -22,6 +23,7 @@ coverage/
 # Test apps generated
 temp/
 tests/adaptors/test-apps/
+test-results/
 
 # IDE and editor files
 .idea/
