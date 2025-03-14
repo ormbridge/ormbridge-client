@@ -440,6 +440,9 @@ export class LiveQuerySet {
      * @returns {Promise<void>}
      */
     async delete() {
+        if (arguments.length > 0){
+            throw new Error('delete() does not accept arguments and will delete the entire queryset. Use filter() before calling delete() to select elements.');
+        }
         await withOperationId(async (operationId) => {
             for (let i = this.dataArray.length - 1; i >= 0; i--) {
                 if (this.filterFn(this.dataArray[i])) {
@@ -509,6 +512,9 @@ export class LiveQuerySet {
      * @returns {Promise<Array>} The updated items.
      */
     async update(updates) {
+        if (arguments.length > 1){
+            throw new Error('Update accepts only accepts an object of the updates to apply. Use filter() before calling update() to select elements.');
+        }
         return await withOperationId(async (operationId) => {
             const affectedIndexes = [];
             const originals = new Map();

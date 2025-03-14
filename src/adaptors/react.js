@@ -16,7 +16,7 @@ import { LiveQuerySet, liveView } from '../core/liveView.js';
  * @example
  * // Example usage in a React component:
  * function UserList() {
- *   const [users, query, isLoading] = useReactLiveView(User.objects.all());
+ *   const [users, query, isLoading] = useLiveView(User.objects.all());
  *   
  *   if (isLoading) return <p>Loading...</p>;
  *   
@@ -32,7 +32,7 @@ import { LiveQuerySet, liveView } from '../core/liveView.js';
  *   );
  * }
  */
-export function useReactLiveView(querySet, options) {
+export function useLiveView(querySet, options) {
   const [data, setData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const liveQueryRef = useRef(null);

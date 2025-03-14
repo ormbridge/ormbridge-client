@@ -14,7 +14,7 @@ import { LiveQuerySet, LiveQuerySetOptions } from "../core/liveView";
  *
  * @example
  * function UserList() {
- *   const [users, query, isLoading] = useReactLiveView(User.objects.all());
+ *   const [users, query, isLoading] = useLiveView(User.objects.all());
  *   if (isLoading) return <p>Loading...</p>;
  *   return (
  *     <div>
@@ -28,7 +28,7 @@ import { LiveQuerySet, LiveQuerySetOptions } from "../core/liveView";
  *   );
  * }
  */
-export function useReactLiveView(
+export function useLiveView(
   querySet: QuerySet<any, any, any, any>,
   options?: LiveQuerySetOptions
 ): [any[], LiveQuerySet<any> | null, boolean];

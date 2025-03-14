@@ -565,6 +565,9 @@ export class QuerySet {
    * @returns {Promise<[number, Object]>} A promise that resolves to a tuple with the number of updated records and a mapping of model names to counts.
    */
   async update(updates) {
+    if (arguments.length > 1){
+        throw new Error('Update accepts only accepts an object of the updates to apply. Use filter() before calling update() to select elements.');
+    }
     this.ensureNotMaterialized();
     
     const newQs = new QuerySet(this.ModelClass, {
@@ -590,6 +593,9 @@ export class QuerySet {
    * @returns {Promise<[number, Object]>} A promise that resolves to a tuple with the number of deleted records and a mapping of model names to counts.
    */
   async delete() {
+    if (arguments.length > 0){
+      throw new Error('delete() does not accept arguments and will delete the entire queryset. Use filter() before calling delete() to select elements.');
+    }
     this.ensureNotMaterialized();
     
     const newQs = new QuerySet(this.ModelClass, {

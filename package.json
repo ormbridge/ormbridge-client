@@ -17,6 +17,14 @@
     "./cli": {
       "import": "./dist/cli/index.js",
       "require": "./dist/cli/index.js"
+    },
+    "./react": {
+      "import": "./dist/adaptors/react.js",
+      "require": "./dist/adaptors/react.js"
+    },
+    "./vue": {
+      "import": "./dist/adaptors/vue.js",
+      "require": "./dist/adaptors/vue.js"
     }
   },
   "scripts": {
