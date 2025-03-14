@@ -13,7 +13,6 @@ export * from './flavours/django/createModelInstance.js';
 export * from './flavours/django/modelSummary.js';
 export * from './config.js';
 
-
 // These imports are needed to ensure correct module initialization order
 // due to circular dependencies - DO NOT REMOVE even if unused
 import { useLiveView as useReactLiveView } from './adaptors/react.js';

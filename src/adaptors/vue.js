@@ -1,6 +1,4 @@
 import { ref, onBeforeUnmount } from 'vue';
-import { QuerySet } from "../flavours/django/querySet";
-import { Model } from "../flavours/django/model";
 import { liveView } from "../core/liveView";
 
 /**
@@ -8,48 +6,59 @@ import { liveView } from "../core/liveView";
  *
  * @param {QuerySet} querySet - The QuerySet to make live.
  * @param {Object} [options] - Options for the LiveQuerySet.
- * @returns {Promise<[Array, Object, boolean]>} A tuple containing:
- *  - data: An array of model instances.
- *  - query: The LiveQuerySet instance (or null if not yet initialized).
- *  - isLoading: A boolean indicating if data is still loading.
+ * @returns {Object} An object containing:
+ *  - data: A ref containing an array of model instances.
+ *  - query: A ref containing the LiveQuerySet instance (or null if not yet initialized).
+ *  - isLoading: A ref indicating if data is still loading.
  *
  * @example
  * // In a Vue component:
  * import { User } from '@/models';
  * import { useLiveView } from '@/adaptors/vue';
  * 
- * const [users, query, isLoading] = await useLiveView(User.objects.all());
+ * setup() {
+ *   const { data: users, query, isLoading } = useLiveView(User.objects.all());
+ *   return { users, query, isLoading };
+ * }
  * 
  * // In the template:
  * // <div v-if="isLoading">Loading...</div>
  * // <div v-for="user in users" :key="user.id">{{ user.name }}</div>
  */
-export async function useLiveView(querySet, options) {
-  // Create reactive data array
+export function useLiveView(querySet, options) {
+  // Use ref for the data array to ensure proper reactivity with mutations
   const data = ref([]);
   const isLoading = ref(true);
-  let liveQuerySet = null;
+  const query = ref(null);
   
-  try {
-    // Create the LiveQuerySet with the reactive array
-    liveQuerySet = await liveView(querySet, data.value, options);
-    
-    // Fetch initial data
-    await liveQuerySet.fetch();
-    
-    // Set up cleanup on component unmount
-    onBeforeUnmount(() => {
-      if (liveQuerySet) {
-        liveQuerySet.destroy();
-      }
-    });
-  } catch (error) {
-    console.error("Failed to initialize live view:", error);
-    throw error;
-  } finally {
-    isLoading.value = false;
-  }
+  // Initialize the live query
+  (async () => {
+    try {
+      // Create the LiveQuerySet with the reactive array
+      // Pass data.value to work with the underlying array
+      query.value = await liveView(querySet, data.value, options);
+      
+      // Fetch initial data
+      await query.value.fetch();
+      
+    } catch (error) {
+      console.error("Failed to initialize live view:", error);
+    } finally {
+      isLoading.value = false;
+    }
+  })();
   
-  // Return the same structure as React's useReactLiveView
-  return [data.value, liveQuerySet, isLoading.value];
+  // Set up cleanup on component unmount
+  onBeforeUnmount(() => {
+    if (query.value) {
+      query.value.destroy();
+    }
+  });
+  
+  // Return reactive objects
+  return {
+    data,
+    query,
+    isLoading
+  };
 }
