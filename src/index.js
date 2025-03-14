@@ -1,3 +1,4 @@
+
 // Main entry point re-exporting core modules
 export * from './core/eventReceivers.js';
 export * from './core/liveView.js';
@@ -12,16 +13,8 @@ export * from './flavours/django/createModelInstance.js';
 export * from './flavours/django/modelSummary.js';
 export * from './config.js';
 
-// Import from adaptors with their new function names
-import { useReactLiveView } from './adaptors/react.js';
-import { useVueLiveView, createVueLiveView } from './adaptors/vue.js';
 
-// Export all functions with consistent naming
-export {
-  // React exports
-  useReactLiveView,
-  
-  // Vue exports
-  useVueLiveView,
-  createVueLiveView,
-};
+// These imports are needed to ensure correct module initialization order
+// due to circular dependencies - DO NOT REMOVE even if unused
+import { useLiveView as useReactLiveView } from './adaptors/react.js';
+import { useLiveView as useVueLiveView } from './adaptors/vue.js';
