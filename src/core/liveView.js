@@ -351,6 +351,7 @@ export class LiveQuerySet {
         }
         this.activeMetrics = new Map();
         this.callbacks = [];
+        this.errorCallbacks = [];
     }
     /**
      * Register a callback function to be called when the data changes
@@ -373,6 +374,30 @@ export class LiveQuerySet {
             callback(eventType);
         }
     }
+
+    /**
+   * Register an error handler for any operations on this LiveQuerySet
+   * @param {function(Error, string)} errorCallback - Function to call with error and operation type
+   * @returns {function()} - Unsubscribe function
+   */
+    onError(errorCallback) {
+        this.errorCallbacks.push(errorCallback);
+        return () => {
+        this.errorCallbacks = this.errorCallbacks.filter(cb => cb !== errorCallback);
+        };
+    }
+
+    /**
+     * Notify all error callbacks about an error
+     * @param {Error} error - The error that occurred
+     * @param {string} operation - Type of operation ('create', 'update', 'delete', etc.)
+     */
+    _notifyError(error, operation) {
+        for (const callback of this.errorCallbacks) {
+        callback(error, operation);
+        }
+    }
+
     /**
      * Returns the current reactive data array.
      * @returns {Array} The data array.
@@ -440,22 +465,61 @@ export class LiveQuerySet {
      * @returns {Promise<void>}
      */
     async delete() {
-        if (arguments.length > 0){
+        if (arguments.length > 0) {
             throw new Error('delete() does not accept arguments and will delete the entire queryset. Use filter() before calling delete() to select elements.');
         }
-        await withOperationId(async (operationId) => {
-            for (let i = this.dataArray.length - 1; i >= 0; i--) {
-                if (this.filterFn(this.dataArray[i])) {
-                    this.dataArray.splice(i, 1);
-                    this._notify('delete');
+        
+        try {
+            await withOperationId(async (operationId) => {
+                // Store deleted items for potential rollback
+                const deletedItems = [];
+                const deletedIndexes = [];
+                
+                // Remove matching items and keep track of them
+                for (let i = this.dataArray.length - 1; i >= 0; i--) {
+                    if (this.filterFn(this.dataArray[i])) {
+                        deletedItems.unshift(this.dataArray[i]); // Add to front to maintain original order
+                        deletedIndexes.unshift(i);               // Store the original index
+                        this.dataArray.splice(i, 1);
+                        this._notify('delete');
+                    }
                 }
-            }
-            await this.qs.executeQuery(Object.assign({}, this.qs.build(), {
-                type: 'delete',
-                operationId,
-                namespace: this.namespace
-            }));
-        });
+                
+                // If nothing was deleted, we're done
+                if (deletedItems.length === 0) {
+                    return;
+                }
+                
+                try {
+                    // Execute delete operation on the server
+                    await this.qs.executeQuery(Object.assign({}, this.qs.build(), {
+                        type: 'delete',
+                        operationId,
+                        namespace: this.namespace
+                    }));
+                } catch (error) {
+                    // Rollback: restore deleted items to their original positions
+                    this._notifyError(error, 'delete');
+                    for (let i = 0; i < deletedItems.length; i++) {
+                        const index = deletedIndexes[i];
+                        // If index is beyond current array length, simply push to end
+                        if (index >= this.dataArray.length) {
+                            this.dataArray.push(deletedItems[i]);
+                        } else {
+                            // Otherwise, insert at original position
+                            this.dataArray.splice(index, 0, deletedItems[i]);
+                        }
+                        this._notify('create'); // Notify about the restored item
+                    }
+                    
+                    // Re-throw to be caught by the outer try/catch
+                    throw error;
+                }
+            });
+        } catch (error) {
+            // Re-throw for anyone awaiting
+            throw error;
+        }
     }
     /**
      * Creates a new item.
@@ -497,6 +561,7 @@ export class LiveQuerySet {
                 return createdItem;
             }
             catch (error) {
+                this._notifyError(error, 'create');
                 const tempIndex = this.dataArray.findIndex(x => x.id === tempId);
                 if (tempIndex !== -1) {
                     this.dataArray.splice(tempIndex, 1);
@@ -536,6 +601,7 @@ export class LiveQuerySet {
                 }));
             }
             catch (error) {
+                this._notifyError(error, 'update');
                 for (const i of affectedIndexes) {
                     const originalItem = originals.get(i);
                     if (originalItem) {
