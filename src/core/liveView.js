@@ -523,7 +523,7 @@ export class LiveQuerySet {
                 if (this.filterFn(item)) {
                     affectedIndexes.push(i);
                     originals.set(i, Object.assign({}, item));
-                    this.dataArray[i] = { ...this.dataArray[i], ...updates };
+                    Object.assign(this.dataArray[i], updates);
                     this._notify('update');
                 }
             }
