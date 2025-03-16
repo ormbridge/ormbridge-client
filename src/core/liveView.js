@@ -421,7 +421,7 @@ export class LiveQuerySet {
         
         // Fetch and populate data if array was cleared
         if (clearData) {
-        const initialData = await this.qs.fetch({});
+        const initialData = await this.qs.fetch(this.options || {});
         if (initialData.length > 0) {
             this.dataArray.push(...initialData);
             this._notify('create');
@@ -501,14 +501,7 @@ export class LiveQuerySet {
      * @returns {Promise<Array>} A promise resolving to the filtered data array.
      */
     async fetch() {
-        let result = this.dataArray.filter(this.filterFn);
-        if (this.limit !== undefined) {
-            result = result.slice(this.offset, this.offset + this.limit);
-        }
-        else if (this.offset) {
-            result = result.slice(this.offset);
-        }
-        return result;
+        return this.dataArray.filter(this.filterFn);
     }
     /**
      * Filters the LiveQuerySet with additional conditions.
@@ -1060,7 +1053,7 @@ export async function liveView(qs, reactiveArray, options) {
         setNamespaceResolver(namespaceResolver);
     }
     const queryState = qs.build();
-    const initialData = await qs.fetch({});
+    const initialData = await qs.fetch(options.serializer || {});
     if (reactiveArray.length === 0 && initialData.length > 0) {
         reactiveArray.push(...initialData);
     }
