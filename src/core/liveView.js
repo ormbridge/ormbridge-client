@@ -421,7 +421,7 @@ export class LiveQuerySet {
         
         // Fetch and populate data if array was cleared
         if (clearData) {
-        const initialData = await this.qs.fetch(this._serializerOptions);
+        const initialData = await this.qs.fetch(this.options || {});
         if (initialData.length > 0) {
             this.dataArray.push(...initialData);
             this._notify('create');
@@ -1053,7 +1053,7 @@ export async function liveView(qs, reactiveArray, options) {
         setNamespaceResolver(namespaceResolver);
     }
     const queryState = qs.build();
-    const initialData = await qs.fetch(options?.serializer || {});
+    const initialData = await qs.fetch(options.serializer || {});
     if (reactiveArray.length === 0 && initialData.length > 0) {
         reactiveArray.push(...initialData);
     }
