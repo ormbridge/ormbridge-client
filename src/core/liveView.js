@@ -576,6 +576,7 @@ export class LiveQuerySet {
                         operationId,
                         namespace: this.namespace
                     }));
+                    await this.refreshMetrics();
                 } catch (error) {
                     // Rollback: restore deleted items to their original positions
                     this._notifyError(error, 'delete');
@@ -637,6 +638,7 @@ export class LiveQuerySet {
                     this.dataArray[index] = createdItem;
                     this._notify('update');
                 }
+                await this.refreshMetrics();
                 return createdItem;
             }
             catch (error) {
@@ -678,6 +680,7 @@ export class LiveQuerySet {
                     operationId,
                     namespace: this.namespace
                 }));
+                await this.refreshMetrics();
             }
             catch (error) {
                 this._notifyError(error, 'update');
