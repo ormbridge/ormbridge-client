@@ -3,16 +3,18 @@ import { Model } from "../flavours/django/model";
 import { LiveQuerySet, LiveQuerySetOptions } from "../core/liveView";
 
 /**
- * React hook for creating and using a LiveQuerySet.
+ * React hook for creating and using a LiveQuerySet with reactive queries.
  *
- * @param querySet - The QuerySet to make live.
+ * @param queryInput - The QuerySet to make live or a function that returns a QuerySet.
  * @param options - Options for the LiveQuerySet.
+ * @param deps - Optional array of dependencies to control when the hook should reinitialize.
  * @returns A tuple containing:
  *  - data: An array of model instances.
  *  - query: The LiveQuerySet instance (or null if not yet initialized).
  *  - isLoading: A boolean indicating if data is still loading.
  *
  * @example
+ * // With a static query
  * function UserList() {
  *   const [users, query, isLoading] = useLiveView(User.objects.all());
  *   if (isLoading) return <p>Loading...</p>;
@@ -27,8 +29,31 @@ import { LiveQuerySet, LiveQuerySetOptions } from "../core/liveView";
  *     </div>
  *   );
  * }
+ * 
+ * // With a reactive query
+ * function FilteredUserList({ departmentId }) {
+ *   const [users, query, isLoading] = useLiveView(
+ *     () => User.objects.filter({ department: departmentId }).all(),
+ *     { limit: 20 }
+ *   );
+ *   
+ *   // The hook will automatically reinitialize when departmentId changes
+ *   // ...
+ * }
+ * 
+ * // With explicit dependencies
+ * function UserPosts({ userId, pageSize }) {
+ *   const queryFn = () => Post.objects.filter({ author: userId }).all();
+ *   const [posts, query, isLoading] = useLiveView(
+ *     queryFn,
+ *     { limit: pageSize },
+ *     [userId, pageSize] // Only reinitialize when these specific values change
+ *   );
+ *   // ...
+ * }
  */
-export function useLiveView(
-  querySet: QuerySet<any, any, any, any>,
-  options?: LiveQuerySetOptions
-): [any[], LiveQuerySet<any> | null, boolean];
+export function useLiveView<T extends Model>(
+  queryInput: QuerySet<any, any, T, any> | (() => QuerySet<any, any, T, any>),
+  options?: LiveQuerySetOptions,
+  deps?: readonly any[]
+): [T[], LiveQuerySet<T> | null, boolean];

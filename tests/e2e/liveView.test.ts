@@ -615,9 +615,6 @@ describe('LiveView E2E Tests', () => {
     // Wait for metrics to refresh
     await wait(500);
     
-    // Manually trigger a refresh to ensure metrics are updated
-    await liveQs.count();
-    
     // Verify that the metric objects have been updated
     expect(count.value).toBe(3, 'Count metric was not updated correctly');
     expect(sum.value).toBe(60, 'Sum metric was not updated correctly');
@@ -907,5 +904,236 @@ describe('LiveView E2E Tests', () => {
     // Clean up resources
     liveQs.destroy();
     await wait(300);
+  });
+
+  it('should refresh LiveQuerySet with new query parameters and clear data', async () => {
+    // Create initial test data
+    await DummyModel.objects.create({ name: 'Item A', value: 100 });
+    await DummyModel.objects.create({ name: 'Item B', value: 200 });
+    await DummyModel.objects.create({ name: 'Special Item', value: 300 });
+    await wait(200);
+    
+    // Create LiveQuerySet with all items
+    const liveQs = await liveView(
+      DummyModel.objects.all(),
+      {
+        serializer: { limit: 10, offset: 0 }
+      }
+    );
+    
+    // Wait for subscription to be fully established
+    await wait(500);
+    
+    // Verify initial state
+    let items = await liveQs.fetch();
+    expect(items.length).toBe(3);
+    
+    // Add a change tracking callback
+    let changeEvents = [];
+    const unsubscribe = liveQs.subscribe((eventType) => {
+      changeEvents.push(eventType);
+    });
+    
+    // Refresh with a more specific filter and new options
+    await liveQs.refresh({
+      newQs: DummyModel.objects.filter({ name: 'Special Item' }),
+      newOptions: { 
+        serializer: { limit: 5 },
+        insertBehavior: { local: 'append', remote: 'append' }
+      },
+      clearData: true
+    });
+    
+    // Verify the data was refreshed with new query filter
+    items = await liveQs.fetch();
+    expect(items.length).toBe(1);
+    expect(items[0].name).toBe('Special Item');
+    
+    // Verify options were updated
+    expect(liveQs.limit).toBe(5);
+    expect(liveQs.insertBehavior.local).toBe('append');
+    
+    // Verify change events were fired
+    expect(changeEvents).toContain('create');
+    
+    // Create new item through the refreshed LiveQuerySet
+    const newItem = await liveQs.create({ name: 'Another Special', value: 400 });
+    
+    // Verify the create operation still works
+    items = await liveQs.fetch();
+    expect(items.length).toBe(2);
+    expect(items.some(item => item.name === 'Another Special')).toBe(true);
+    
+    // Verify the item was added to the database
+    const dbItems = await DummyModel.objects.filter({ name: 'Another Special' }).fetch();
+    expect(dbItems.length).toBe(1);
+    
+    // Clean up
+    unsubscribe();
+    liveQs.destroy();
+    await wait(200);
+  });
+  
+  it('should refresh LiveQuerySet without clearing data', async () => {
+    // Create initial test data
+    await DummyModel.objects.create({ name: 'Red Item', value: 50 });
+    await DummyModel.objects.create({ name: 'Blue Item', value: 75 });
+    await wait(200);
+    
+    // Create LiveQuerySet with all items
+    const liveQs = await liveView(
+      DummyModel.objects.all(),
+      {
+        serializer: { limit: 10 }
+      }
+    );
+    
+    // Wait for subscription to be fully established
+    await wait(500);
+    
+    // Verify initial state
+    let items = await liveQs.fetch();
+    expect(items.length).toBe(2);
+    
+    // Add a change tracking callback
+    let changeEvents = [];
+    const unsubscribe = liveQs.subscribe((eventType) => {
+      changeEvents.push(eventType);
+    });
+    
+    // Refresh with new options but don't clear data
+    await liveQs.refresh({
+      newOptions: { 
+        serializer: { limit: 5 },
+        insertBehavior: { local: 'prepend' }
+      },
+      clearData: false
+    });
+    
+    // Verify the data was preserved
+    items = await liveQs.fetch();
+    expect(items.length).toBe(2);
+    
+    // Verify options were updated
+    expect(liveQs.limit).toBe(5);
+    expect(liveQs.insertBehavior.local).toBe('prepend');
+    
+    // Verify no change events were fired since clearData was false
+    expect(changeEvents.length).toBe(0);
+    
+    // Add a new item via direct ORM to test if events still work
+    await wait(500);
+    await DummyModel.objects.create({ name: 'Green Item', value: 100 });
+    
+    // Wait for the event to propagate
+    const eventPropagated = await waitForCondition(async () => {
+      const currentItems = await liveQs.fetch();
+      return currentItems.some(item => item.name === 'Green Item');
+    }, 8000, 200);
+    
+    // Verify the new item was received through event system
+    expect(eventPropagated).toBe(true, 'External create event did not propagate after refresh');
+    
+    // Verify change events were recorded correctly
+    expect(changeEvents).toContain('create');
+    
+    // Clean up
+    unsubscribe();
+    liveQs.destroy();
+    await wait(200);
+  });
+  
+  it('should throw error when refreshing with a different model class', async () => {
+    // Create test data
+    await DummyModel.objects.create({ name: 'Test Item', value: 100 });
+    
+    // Create related model instance
+    await DummyRelatedModel.objects.create({ name: 'Related Item' });
+    await wait(200);
+    
+    // Create LiveQuerySet with DummyModel
+    const liveQs = await liveView(
+      DummyModel.objects.all(),
+      {
+        serializer: { limit: 10 }
+      }
+    );
+    
+    // Wait for subscription to be fully established
+    await wait(500);
+    
+    // Attempt to refresh with a different model class
+    try {
+      await liveQs.refresh({
+        newQs: DummyRelatedModel.objects.all(),
+        clearData: true
+      });
+      
+      // If we get here, the test failed
+      expect(true).toBe(false, 'Should have thrown an error when refreshing with different model');
+    } catch (error) {
+      // Verify the error message
+      expect(error.message).toContain('Cannot refresh LiveQuerySet with a different model class');
+    }
+    
+    // Verify the original query is still intact
+    const items = await liveQs.fetch();
+    expect(items.length).toBe(1);
+    expect(items[0].name).toBe('Test Item');
+    
+    // Clean up
+    liveQs.destroy();
+    await wait(200);
+  });
+  
+  it('should update metric objects after refreshing LiveQuerySet', async () => {
+    // Create initial test data
+    await DummyModel.objects.create({ name: 'Item 1', value: 10 });
+    await DummyModel.objects.create({ name: 'Item 2', value: 20 });
+    await wait(200);
+    
+    // Create LiveQuerySet with all items
+    const liveQs = await liveView(
+      DummyModel.objects.all(),
+      {
+        serializer: { limit: 10 }
+      }
+    );
+    
+    // Wait for subscription to be fully established
+    await wait(500);
+    
+    // Get initial metrics
+    const count = await liveQs.count();
+    const sum = await liveQs.sum('value');
+    
+    // Verify initial metrics
+    expect(count.value).toBe(2);
+    expect(sum.value).toBe(30);
+    
+    // Refresh with more specific filter
+    await liveQs.refresh({
+      newQs: DummyModel.objects.filter({ value: 20 }),
+      clearData: true
+    });
+    
+    // Wait for refreshed data
+    await wait(1000);
+    
+    // Verify metrics were updated
+    expect(count.value).toBe(1);
+    expect(sum.value).toBe(20);
+    
+    // Create additional item via LiveQuerySet
+    await liveQs.create({ name: 'Item 3', value: 20 });
+    await wait(1000);
+    
+    // Verify metrics updated again
+    expect(count.value).toBe(2);
+    expect(sum.value).toBe(40);
+    
+    // Clean up
+    liveQs.destroy();
+    await wait(200);
   });
 });

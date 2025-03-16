@@ -353,6 +353,85 @@ export class LiveQuerySet {
         this.callbacks = [];
         this.errorCallbacks = [];
     }
+
+    /**
+     * Refreshes the LiveQuerySet with a new QuerySet and/or options
+     * @param {Object} params - Refresh parameters
+     * @param {QuerySet} [params.newQs] - New QuerySet to use
+     * @param {LiveQuerySetOptions} [params.newOptions] - New options to use
+     * @param {boolean} [params.clearData=true] - Whether to clear the reactive array before refreshing
+     * @returns {Promise<void>}
+     * @throws {Error} If attempting to refresh with a different model class
+     */
+    async refresh({ newQs, newOptions, clearData = true } = {}) {
+        // Validate model consistency
+        if (newQs && newQs.ModelClass !== this.ModelClass) {
+        throw new Error('Cannot refresh LiveQuerySet with a different model class');
+        }        
+        // Clean up other resources
+        liveQueryRegistry.unregister(this.namespace, this);
+        const eventReceiver = getEventReceiver();
+        if (eventReceiver) {
+        eventReceiver.unsubscribe(this.namespace);
+        }
+        
+        // Clear the data array if requested
+        if (clearData) {
+        this.dataArray.length = 0;
+        }
+        
+        // Update instance properties
+        if (newQs) {
+        this.qs = newQs;
+        // ModelClass remains the same as validated above
+        }
+        
+        if (newOptions) {
+        this.options = { ...this.options, ...newOptions };
+        this._serializerOptions = this.options.serializer || {};
+        this.offset = this._serializerOptions.offset || 0;
+        this.limit = this._serializerOptions.limit;
+        
+        // Update insertion behavior if provided
+        if (newOptions.insertBehavior) {
+            if (newOptions.insertBehavior.local) {
+            this.insertBehavior.local = newOptions.insertBehavior.local;
+            }
+            if (newOptions.insertBehavior.remote) {
+            this.insertBehavior.remote = newOptions.insertBehavior.remote;
+            }
+        }
+        }
+        
+        // Re-calculate namespace and register
+        const modelName = this.ModelClass.modelName;
+        const namespaceResolver = defaultNamespaceResolver;
+        this.namespace = namespaceResolver(modelName);
+        liveQueryRegistry.register(this.namespace, this);
+        
+        // Re-subscribe to events
+        const newEventReceiver = getEventReceiver();
+        if (newEventReceiver) {
+        newEventReceiver.subscribe(this.namespace);
+        }
+        
+        // Refresh filter conditions
+        const queryState = this.qs.build();
+        this.originalFilterConditions = queryState.filter && queryState.filter.conditions;
+        
+        // Fetch and populate data if array was cleared
+        if (clearData) {
+        const initialData = await this.qs.fetch({});
+        if (initialData.length > 0) {
+            this.dataArray.push(...initialData);
+            this._notify('create');
+        }
+        }
+        
+        // Refresh metrics if there were any active
+        await this.refreshMetrics();
+    }
+
     /**
      * Register a callback function to be called when the data changes
      * @param {function(string)} callback - Function to call with event type
@@ -497,6 +576,7 @@ export class LiveQuerySet {
                         operationId,
                         namespace: this.namespace
                     }));
+                    await this.refreshMetrics();
                 } catch (error) {
                     // Rollback: restore deleted items to their original positions
                     this._notifyError(error, 'delete');
@@ -558,6 +638,7 @@ export class LiveQuerySet {
                     this.dataArray[index] = createdItem;
                     this._notify('update');
                 }
+                await this.refreshMetrics();
                 return createdItem;
             }
             catch (error) {
@@ -599,6 +680,7 @@ export class LiveQuerySet {
                     operationId,
                     namespace: this.namespace
                 }));
+                await this.refreshMetrics();
             }
             catch (error) {
                 this._notifyError(error, 'update');
