@@ -421,7 +421,7 @@ export class LiveQuerySet {
         
         // Fetch and populate data if array was cleared
         if (clearData) {
-        const initialData = await this.qs.fetch(options?.serializer || {});
+        const initialData = await this.qs.fetch(this._serializerOptions);
         if (initialData.length > 0) {
             this.dataArray.push(...initialData);
             this._notify('create');
