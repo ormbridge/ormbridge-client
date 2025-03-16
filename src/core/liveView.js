@@ -166,6 +166,7 @@ export const handleModelEvent = async (event) => {
         if (event.model && lqs.ModelClass && lqs.ModelClass.modelName !== event.model) {
             continue;
         }
+        await lqs.refreshMetrics();
         if (event.operationId && activeOperationIds.has(event.operationId)) {
             continue;
         }
@@ -220,7 +221,6 @@ export const handleModelEvent = async (event) => {
                     }
                     break;
             }
-            await lqs.refreshMetrics();
         }
         catch (err) {
             console.error(`Error processing ${normalizedEventType} event:`, err);
@@ -570,7 +570,6 @@ export class LiveQuerySet {
                         operationId,
                         namespace: this.namespace
                     }));
-                    await this.refreshMetrics();
                 } catch (error) {
                     // Rollback: restore deleted items to their original positions
                     this._notifyError(error, 'delete');
@@ -632,7 +631,6 @@ export class LiveQuerySet {
                     this.dataArray[index] = createdItem;
                     this._notify('update');
                 }
-                await this.refreshMetrics();
                 return createdItem;
             }
             catch (error) {
@@ -674,7 +672,6 @@ export class LiveQuerySet {
                     operationId,
                     namespace: this.namespace
                 }));
-                await this.refreshMetrics();
             }
             catch (error) {
                 this._notifyError(error, 'update');
