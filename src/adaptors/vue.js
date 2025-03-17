@@ -34,9 +34,11 @@ export function useLiveView(querySet, options) {
   // Initialize the live query
   (async () => {
     try {
+      let createMetricFn = (value) => ref(value);
+
       // Create the LiveQuerySet with the reactive array
       // Pass data.value to work with the underlying array
-      query.value = await liveView(querySet, data.value, options);
+      query.value = await liveView(querySet, data.value, options, createMetricFn);
       
       // Fetch initial data
       await query.value.fetch();
