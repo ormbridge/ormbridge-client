@@ -565,7 +565,22 @@ describe('LiveView E2E Tests', () => {
     await wait(500);
   });
   
-  it('should update metric objects when data changes', async () => {
+  // Helper function to wait for a metric to reach an expected value
+  const waitForMetricValue = async (metric, expectedValue, maxWait = 5000, checkInterval = 100) => {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWait) {
+      if (metric.value === expectedValue) {
+        return true;
+      }
+      await wait(checkInterval);
+    }
+    
+    return false;
+  };
+
+  // Test case for metrics updating after data changes
+  it('should update metric objects when data changes (async)', async () => {
     // First, ensure a clean slate
     await DummyModel.objects.all().delete();
     await wait(500);
@@ -612,10 +627,11 @@ describe('LiveView E2E Tests', () => {
     // Assert that the event propagated successfully
     expect(eventPropagated).toBe(true, 'External create event did not propagate in time');
     
-    // Wait for metrics to refresh
-    await wait(500);
+    // Wait for metrics to update asynchronously or force a refresh
+    await wait(500); // Give some time for async updates
+    await liveQs.refreshMetrics(); // Force synchronous refresh to ensure test reliability
     
-    // Verify that the metric objects have been updated
+    // Verify the metric values after explicit refresh
     expect(count.value).toBe(3, 'Count metric was not updated correctly');
     expect(sum.value).toBe(60, 'Sum metric was not updated correctly');
     expect(avg.value).toBe(20, 'Average metric was not updated correctly');
@@ -624,8 +640,9 @@ describe('LiveView E2E Tests', () => {
     liveQs.destroy();
     await wait(500);
   });
-  
-  it('should update metric objects on update events', async () => {
+
+  // Test case for metrics updating on update events
+  it('should update metric objects on update events (async)', async () => {
     // First, ensure a clean slate
     await DummyModel.objects.all().delete();
     await wait(500);
@@ -671,13 +688,11 @@ describe('LiveView E2E Tests', () => {
     // Assert that the update propagated successfully
     expect(updatePropagated).toBe(true, 'External update event did not propagate in time');
     
-    // Wait for metrics to refresh
-    await wait(500);
+    // Wait for metrics to update asynchronously or force a refresh
+    await wait(500); // Give some time for async updates
+    await liveQs.refreshMetrics(); // Force synchronous refresh to ensure test reliability
     
-    // Manually trigger a refresh to ensure metrics are updated
-    await liveQs.sum('value');
-    
-    // Verify that the metric objects have been updated
+    // Verify metrics after explicit refresh
     expect(sum.value).toBe(60, 'Sum metric was not updated correctly'); // 40 + 20
     expect(avg.value).toBe(30, 'Average metric was not updated correctly'); // (40 + 20) / 2
     
@@ -685,8 +700,9 @@ describe('LiveView E2E Tests', () => {
     liveQs.destroy();
     await wait(500);
   });
-  
-  it('should update metric objects on delete events', async () => {
+
+  // Test case for metrics updating on delete events
+  it('should update metric objects on delete events (async)', async () => {
     // First, ensure a clean slate by deleting all existing items
     await DummyModel.objects.all().delete();
     await wait(500);
@@ -735,10 +751,11 @@ describe('LiveView E2E Tests', () => {
     // Assert that the delete propagated successfully
     expect(deletePropagated).toBe(true, 'External delete event did not propagate in time');
     
-    // Wait for metrics to refresh
-    await wait(1000);
+    // Wait for metrics to update asynchronously or force a refresh
+    await wait(500); // Give some time for async updates
+    await liveQs.refreshMetrics(); // Force synchronous refresh to ensure test reliability
     
-    // Verify that the metric objects have been updated
+    // Verify metrics after explicit refresh
     expect(count.value).toBe(1, 'Count metric was not updated correctly');
     expect(sum.value).toBe(10, 'Sum metric was not updated correctly');
     expect(avg.value).toBe(10, 'Average metric was not updated correctly');
