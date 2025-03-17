@@ -2,11 +2,78 @@ import { QuerySet } from "../flavours/django/querySet.js";
 import { Model } from "../flavours/django/model.js";
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
+import * as arrayDiff from 'fast-array-diff';
 import { EventType, getEventReceiver, setEventReceiver, setNamespaceResolver,
 // NamespaceResolver is a function type
  } from './eventReceivers.js';
 import { initializeEventReceiver } from '../config.js';
 import { MultipleObjectsReturned, DoesNotExist } from "../flavours/django/errors.js";
+import * as arrayDiff from 'fast-array-diff';
+
+/**
+ * Updates an array in place to match the target array with minimal operations
+ * Based on comparing items by a primary key and updating properties of existing items
+ * 
+ * @param {Array} sourceArray - The array to update in place
+ * @param {Array} targetArray - The target array with new/updated data
+ * @param {string|Function} primaryKey - Primary key field name or comparison function
+ * @returns {Array} - The updated sourceArray (same reference)
+ */
+function updateArrayInPlace(sourceArray, targetArray, primaryKey = 'id') {
+  // Handle empty arrays
+  if (targetArray.length === 0) {
+    sourceArray.length = 0;
+    return sourceArray;
+  }
+  
+  if (sourceArray.length === 0) {
+    sourceArray.push(...targetArray);
+    return sourceArray;
+  }
+  
+  // Create comparison function
+  const compareFunc = typeof primaryKey === 'function' 
+    ? primaryKey 
+    : (a, b) => a[primaryKey] === b[primaryKey];
+  
+  // Create a map of target items by their primary key for quick lookups
+  const keyExtractor = typeof primaryKey === 'function' 
+    ? (item) => JSON.stringify(item) // Fallback for custom compare functions
+    : (item) => item[primaryKey];
+    
+  const targetMap = new Map(
+    targetArray.map(item => [keyExtractor(item), item])
+  );
+  
+  // First, update properties of existing items that will stay in the array
+  for (let i = 0; i < sourceArray.length; i++) {
+    const key = keyExtractor(sourceArray[i]);
+    const targetItem = targetMap.get(key);
+    
+    if (targetItem) {
+      // Update all properties from the target item
+      Object.assign(sourceArray[i], targetItem);
+    }
+  }
+  
+  // Now handle additions and removals using fast-array-diff
+  const patch = arrayDiff.getPatch(sourceArray, targetArray, compareFunc);
+  
+  // Apply patches to update the array in place
+  // Starting from the end to avoid index shifting problems
+  for (let i = patch.length - 1; i >= 0; i--) {
+    const op = patch[i];
+    
+    if (op.type === 'remove') {
+      sourceArray.splice(op.oldPos, op.items.length);
+    } else if (op.type === 'add') {
+      sourceArray.splice(op.oldPos, 0, ...op.items);
+    }
+  }
+  
+  return sourceArray;
+}
+
 // --------------------
 // JSDoc Type Definitions
 // --------------------
@@ -356,6 +423,46 @@ export class LiveQuerySet {
     }
 
     /**
+     * Updates an array in place to match the target array with minimal operations
+     * Based on comparing items by a primary key
+     * 
+     * @param {Array} sourceArray - The array to update in place
+     * @param {Array} targetArray - The target array with new/updated data
+     * @param {string|Function} primaryKey - Primary key field name or comparison function
+     * @returns {Array} - The updated sourceArray (same reference)
+     */
+    updateArrayInPlace(sourceArray, targetArray, primaryKey = 'id') {
+        // Handle empty arrays
+        if (targetArray.length === 0) {
+        sourceArray.length = 0;
+        return sourceArray;
+        }
+        
+        if (sourceArray.length === 0) {
+        sourceArray.push(...targetArray);
+        return sourceArray;
+        }
+        
+        // Create comparison function
+        const compareFunc = typeof primaryKey === 'function' 
+        ? primaryKey 
+        : (a, b) => a[primaryKey] === b[primaryKey];
+        
+        // Get the patch operations
+        const patch = arrayDiff.getPatch(sourceArray, targetArray, compareFunc);
+        
+        // Apply patches to update the array in place
+        for (const op of patch) {
+        if (op.type === 'remove') {
+            sourceArray.splice(op.oldPos, op.items.length);
+        } else if (op.type === 'add') {
+            sourceArray.splice(op.oldPos, 0, ...op.items);
+        }
+        }
+        return sourceArray;
+    }
+
+    /**
      * Refreshes the LiveQuerySet with a new QuerySet and/or options
      * @param {Object} params - Refresh parameters
      * @param {QuerySet} [params.newQs] - New QuerySet to use
@@ -374,11 +481,6 @@ export class LiveQuerySet {
         const eventReceiver = getEventReceiver();
         if (eventReceiver) {
         eventReceiver.unsubscribe(this.namespace);
-        }
-        
-        // Clear the data array if requested
-        if (clearData) {
-        this.dataArray.length = 0;
         }
         
         // Update instance properties
@@ -418,13 +520,18 @@ export class LiveQuerySet {
         const queryState = this.qs.build();
         this.originalFilterConditions = queryState.filter && queryState.filter.conditions;
         
-        // Fetch and populate data if array was cleared
         if (clearData) {
-        const initialData = await this.qs.fetch(this._serializerOptions);
-        if (initialData.length > 0) {
-            this.dataArray.push(...initialData);
+            // Fetch new data
+            const newData = await this.qs.fetch(this._serializerOptions);
+            
+            // Get primary key field name
+            const pkField = this.ModelClass.primaryKeyField || 'id';
+            
+            // Update the array in place
+            updateArrayInPlace(this.dataArray, newData, pkField);
+            
+            // Notify of changes
             this._notify('create');
-        }
         }
         
         // Refresh metrics if there were any active
