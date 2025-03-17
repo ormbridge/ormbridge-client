@@ -950,7 +950,7 @@ describe('LiveView E2E Tests', () => {
     expect(items[0].name).toBe('Special Item');
     
     // Verify options were updated
-    expect(liveQs.limit).toBe(5);
+    expect(liveQs._serializerOptions.limit).toBe(5);
     expect(liveQs.insertBehavior.local).toBe('append');
     
     // Verify change events were fired
@@ -1015,7 +1015,7 @@ describe('LiveView E2E Tests', () => {
     expect(items.length).toBe(2);
     
     // Verify options were updated
-    expect(liveQs.limit).toBe(5);
+    expect(liveQs._serializerOptions.limit).toBe(5);
     expect(liveQs.insertBehavior.local).toBe('prepend');
     
     // Verify no change events were fired since clearData was false

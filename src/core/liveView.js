@@ -163,10 +163,10 @@ export const handleModelEvent = async (event) => {
         return;
     }
     for (const lqs of liveQuerySets) {
+        await lqs.refreshMetrics();
         if (event.model && lqs.ModelClass && lqs.ModelClass.modelName !== event.model) {
             continue;
         }
-        await lqs.refreshMetrics();
         if (event.operationId && activeOperationIds.has(event.operationId)) {
             continue;
         }
@@ -320,8 +320,6 @@ export class LiveQuerySet {
         this.filterFn = filterFn || (() => true);
         this.options = options || {};
         this._serializerOptions = this.options.serializer || {};
-        this.offset = this._serializerOptions.offset || 0;
-        this.limit = this._serializerOptions.limit;
         this.originalFilterConditions = filterConditions;
         this.ModelClass = this.qs.ModelClass;
         
@@ -389,9 +387,7 @@ export class LiveQuerySet {
         if (newOptions) {
         this.options = { ...this.options, ...newOptions };
         this._serializerOptions = this.options.serializer || {};
-        this.offset = this._serializerOptions.offset || 0;
-        this.limit = this._serializerOptions.limit;
-        
+
         // Update insertion behavior if provided
         if (newOptions.insertBehavior) {
             if (newOptions.insertBehavior.local) {
@@ -610,7 +606,7 @@ export class LiveQuerySet {
                 optimisticItem, 
                 this.insertBehavior.local, 
                 {
-                    limit: this.limit,
+                    limit: this._serializerOptions?.limit,
                     fixedPageSize: this.options.fixedPageSize,
                     strictMode: this.options.strictMode
                 },
@@ -797,7 +793,7 @@ export class LiveQuerySet {
             filteredItems,
             this.insertBehavior.remote,
             {
-                limit: this.limit,
+                limit: this._serializerOptions?.limit,
                 fixedPageSize: this.options.fixedPageSize,
                 strictMode: this.options.strictMode
             },
@@ -865,8 +861,8 @@ export class LiveQuerySet {
         // Check if we're at or beyond our limit and using the append behavior
         // In that case, we don't add the item since it would be beyond the visible range
         if (this.insertBehavior.remote === 'append' && 
-            this.limit !== undefined && 
-            this.dataArray.length >= (this.limit - this.offset)) {
+            this._serializerOptions?.limit !== undefined && 
+            this.dataArray.length >= this._serializerOptions.limit) {
             return;
         }
         
@@ -875,7 +871,7 @@ export class LiveQuerySet {
             item,
             this.insertBehavior.remote,
             {
-                limit: this.limit,
+                limit: this._serializerOptions?.limit,
                 fixedPageSize: this.options.fixedPageSize,
                 strictMode: this.options.strictMode
             },
