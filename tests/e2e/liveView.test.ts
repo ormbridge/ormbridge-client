@@ -629,7 +629,6 @@ describe('LiveView E2E Tests', () => {
     
     // Wait for metrics to update asynchronously or force a refresh
     await wait(500); // Give some time for async updates
-    await liveQs.refreshMetrics(); // Force synchronous refresh to ensure test reliability
     
     // Verify the metric values after explicit refresh
     expect(count.value).toBe(3, 'Count metric was not updated correctly');
@@ -690,7 +689,6 @@ describe('LiveView E2E Tests', () => {
     
     // Wait for metrics to update asynchronously or force a refresh
     await wait(500); // Give some time for async updates
-    await liveQs.refreshMetrics(); // Force synchronous refresh to ensure test reliability
     
     // Verify metrics after explicit refresh
     expect(sum.value).toBe(60, 'Sum metric was not updated correctly'); // 40 + 20
@@ -753,7 +751,6 @@ describe('LiveView E2E Tests', () => {
     
     // Wait for metrics to update asynchronously or force a refresh
     await wait(500); // Give some time for async updates
-    await liveQs.refreshMetrics(); // Force synchronous refresh to ensure test reliability
     
     // Verify metrics after explicit refresh
     expect(count.value).toBe(1, 'Count metric was not updated correctly');
