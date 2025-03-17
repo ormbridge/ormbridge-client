@@ -787,11 +787,6 @@ export class LiveQuerySet {
             return;
         }
         
-        const filteredItems = items.filter(this.filterFn);
-        if (filteredItems.length === 0) {
-            return;
-        }
-        
         handleItemInsertion(
             this.dataArray,
             filteredItems,
@@ -829,14 +824,9 @@ export class LiveQuerySet {
      * @param {Object} item - The created item.
      * @param {boolean} [shouldApplyFilters=true] - Whether to apply filters.
      */
-    handleExternalCreateEvent(item, shouldApplyFilters = true) {
+    handleExternalCreateEvent(item) {
         // Skip if the item was created by an active operation
         if (item.operationId && activeOperationIds.has(item.operationId)) {
-            return;
-        }
-        
-        // Use the local filter function (simple key equality check)
-        if (shouldApplyFilters && !this.filterFn(item)) {
             return;
         }
         
