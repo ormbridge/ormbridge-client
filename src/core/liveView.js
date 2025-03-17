@@ -313,7 +313,7 @@ export class LiveQuerySet {
      */
 
     // Update to the constructor to initialize these new options
-    constructor(qs, dataArray, options, filterFn, filterConditions) {
+    constructor(qs, dataArray, options, filterFn, filterConditions, createMetricFn) {
         this.qs = qs;
         this.dataArray = dataArray;
         this.filterFn = filterFn || (() => true);
@@ -321,6 +321,7 @@ export class LiveQuerySet {
         this._serializerOptions = this.options.serializer || {};
         this.originalFilterConditions = filterConditions;
         this.ModelClass = this.qs.ModelClass;
+        this.createMetricFn = createMetricFn ? createMetricFn : (value) => ({ value });
         
         // Initialize insertion behavior with defaults
         this.insertBehavior = {
@@ -920,6 +921,25 @@ export class LiveQuerySet {
             this._notify('delete');
         }
     }
+
+    /**
+     * 
+     * @param {String} metricKey 
+     * @param {Number} value 
+     * @returns 
+     */
+    _getOrCreateMetric(metricKey, value) {
+        const existing = this.activeMetrics.get(metricKey);
+        if (existing) {
+            existing.value = value;
+            return existing;
+        }
+    
+        const result = this.createMetricFn(value);
+        this.activeMetrics.set(metricKey, result);
+        return result;
+    }
+
     /**
      * Returns the count metric.
      * @param {string} [field] - Field to count.
@@ -928,9 +948,7 @@ export class LiveQuerySet {
     async count(field) {
         const value = await this.qs.count(field);
         const metricKey = `count:${String(field || '')}`;
-        const result = { value };
-        this.activeMetrics.set(metricKey, result);
-        return result;
+        return this._getOrCreateMetric(metricKey, value);
     }
     /**
      * Returns the sum metric.
@@ -940,9 +958,7 @@ export class LiveQuerySet {
     async sum(field) {
         const value = await this.qs.sum(field);
         const metricKey = `sum:${String(field)}`;
-        const result = { value };
-        this.activeMetrics.set(metricKey, result);
-        return result;
+        return this._getOrCreateMetric(metricKey, value);
     }
     /**
      * Returns the average metric.
@@ -952,9 +968,7 @@ export class LiveQuerySet {
     async avg(field) {
         const value = await this.qs.avg(field);
         const metricKey = `avg:${String(field)}`;
-        const result = { value };
-        this.activeMetrics.set(metricKey, result);
-        return result;
+        return this._getOrCreateMetric(metricKey, value);
     }
     /**
      * Returns the minimum metric.
@@ -964,9 +978,7 @@ export class LiveQuerySet {
     async min(field) {
         const value = await this.qs.min(field);
         const metricKey = `min:${String(field)}`;
-        const result = { value };
-        this.activeMetrics.set(metricKey, result);
-        return result;
+        return this._getOrCreateMetric(metricKey, value);
     }
     /**
      * Returns the maximum metric.
@@ -976,9 +988,7 @@ export class LiveQuerySet {
     async max(field) {
         const value = await this.qs.max(field);
         const metricKey = `max:${String(field)}`;
-        const result = { value };
-        this.activeMetrics.set(metricKey, result);
-        return result;
+        return this._getOrCreateMetric(metricKey, value);
     }
     /**
      * Returns a single object matching the filter conditions from the cached data.
@@ -1034,9 +1044,10 @@ export class LiveQuerySet {
  * @param {QuerySet} qs - The QuerySet.
  * @param {Array} reactiveArray - Reactive array for data.
  * @param {LiveQuerySetOptions} [options] - Options for live view.
+ * @param {function(value: any): MetricResult} [createMetricFn] - Function to create metric results.
  * @returns {Promise<LiveQuerySet>} A promise resolving to a LiveQuerySet.
  */
-export async function liveView(qs, reactiveArray, options) {
+export async function liveView(qs, reactiveArray, options, createMetricFn) {
     qs = qs;
     const backendKey = qs.modelClass.configKey;
     if (!backendKey) {
@@ -1060,7 +1071,7 @@ export async function liveView(qs, reactiveArray, options) {
     if (reactiveArray.length === 0 && initialData.length > 0) {
         reactiveArray.push(...initialData);
     }
-    return new LiveQuerySet(qs, reactiveArray, options, undefined, queryState.filter && queryState.filter.conditions);
+    return new LiveQuerySet(qs, reactiveArray, options, undefined, queryState.filter && queryState.filter.conditions, createMetricFn);
 }
 /**
  * Backward compatibility function for existing code.
