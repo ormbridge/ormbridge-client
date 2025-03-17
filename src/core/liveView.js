@@ -485,6 +485,7 @@ export class LiveQuerySet {
     get data() {
         return this.dataArray;
     }
+
     /**
      * Destroys this live query by unregistering event handlers.
      */
@@ -497,6 +498,7 @@ export class LiveQuerySet {
             eventReceiver.unsubscribe(this.namespace);
         }
     }
+
     /**
      * Fetches the current data based on filter and pagination.
      * @returns {Promise<Array>} A promise resolving to the filtered data array.
@@ -505,35 +507,27 @@ export class LiveQuerySet {
         let result = this.dataArray.filter(this.filterFn);
         return result;
     }
+
     /**
      * Filters the LiveQuerySet with additional conditions.
      * @param {Object} conditions - Filter conditions.
      * @returns {LiveQuerySet} A new LiveQuerySet instance.
      */
     filter(conditions) {
+        // Build a filter function based solely on the new conditions.
         const newFilter = (item) => {
             return Object.entries(conditions).every(([key, value]) => {
-                if (key.includes("__")) {
-                    const parts = key.split("__");
-                    let result = item;
-                    for (const part of parts) {
-                        if (result && part in result) {
-                            result = result[part];
-                        }
-                        else {
-                            throw new Error(`LiveQuerySet filter error: Property "${key}" not available on item ${JSON.stringify(item)}.`);
-                        }
-                    }
-                    return result === value;
-                }
                 return item[key] === value;
             });
         };
-        const composedFilter = (item) => this.filterFn(item) && newFilter(item);
+        // Create a new QuerySet that is already filtered on the server side.
         const newQs = this.qs.filter(conditions);
-        const combinedFilterConditions = Object.assign({}, this.originalFilterConditions, conditions);
-        return new LiveQuerySet(newQs, this.dataArray, this.options, composedFilter, combinedFilterConditions);
+
+        // Since the originalFilterConditions are already part of the qs,
+        // we can simply use the new conditions as the filter.
+        return new LiveQuerySet(newQs, this.dataArray, this.options, newFilter, conditions);
     }
+
     /**
      * Deletes items matching the filter.
      * @returns {Promise<void>}
@@ -595,6 +589,7 @@ export class LiveQuerySet {
             throw error;
         }
     }
+
     /**
      * Creates a new item.
      * @param {Object} item - The item data.
@@ -645,6 +640,7 @@ export class LiveQuerySet {
             }
         });
     }
+
     /**
      * Updates items matching the filter.
      * @param {Object} updates - Update data.
@@ -688,6 +684,7 @@ export class LiveQuerySet {
             return this.dataArray.filter(this.filterFn);
         });
     }
+
     /**
      * Refreshes all active metrics.
      * @returns {Promise<void>}
@@ -732,6 +729,7 @@ export class LiveQuerySet {
         }
         await Promise.all(refreshPromises);
     }
+
     /**
      * Handles a bulk update event from the server.
      * @param {Array<string|number>} instanceIds - Array of primary key values.
@@ -779,6 +777,7 @@ export class LiveQuerySet {
             console.error('Error handling bulk update event:', err);
         }
     }
+
     /**
      * Handles a bulk create event from the server.
      * @param {Array} items - Array of new items.
@@ -805,6 +804,7 @@ export class LiveQuerySet {
             this._notify.bind(this)
         );
     }
+
     /**
      * Handles a bulk delete event from the server.
      * @param {Array<string|number>} instanceIds - Array of primary key values.
@@ -823,54 +823,38 @@ export class LiveQuerySet {
         this.dataArray.push(...filteredArray);
         this._notify('delete');;
     }
+
     /**
      * Handles an external create event.
      * @param {Object} item - The created item.
      * @param {boolean} [shouldApplyFilters=true] - Whether to apply filters.
      */
     handleExternalCreateEvent(item, shouldApplyFilters = true) {
+        // Skip if the item was created by an active operation
         if (item.operationId && activeOperationIds.has(item.operationId)) {
             return;
         }
         
-        if (shouldApplyFilters && this.originalFilterConditions) {
-            for (const [key, value] of Object.entries(this.originalFilterConditions)) {
-                if (key.includes("__")) {
-                    const parts = key.split("__");
-                    let result = item;
-                    for (const part of parts) {
-                        if (result && part in result) {
-                            result = result[part];
-                        }
-                        else {
-                            return;
-                        }
-                    }
-                    if (result !== value)
-                        return;
-                }
-                else if (item[key] !== value) {
-                    return;
-                }
-            }
+        // Use the local filter function (simple key equality check)
+        if (shouldApplyFilters && !this.filterFn(item)) {
+            return;
         }
         
         const pkField = this.ModelClass.primaryKeyField;
         const existingIndex = this.dataArray.findIndex(x => x[pkField] === item[pkField]);
-        
         if (existingIndex !== -1) {
             this.handleExternalUpdateEvent(item);
             return;
         }
         
-        // Check if we're at or beyond our limit and using the append behavior
-        // In that case, we don't add the item since it would be beyond the visible range
-        if (this.insertBehavior.remote === 'append' && 
-            this._serializerOptions?.limit !== undefined && 
+        // Check if we're at or beyond our limit when using "append" behavior
+        if (this.insertBehavior.remote === 'append' &&
+            this._serializerOptions?.limit !== undefined &&
             this.dataArray.length >= this._serializerOptions.limit) {
             return;
         }
         
+        // Insert the new item
         handleItemInsertion(
             this.dataArray,
             item,
@@ -883,6 +867,7 @@ export class LiveQuerySet {
             this._notify.bind(this)
         );
     }
+
     /**
      * Handles an external update event.
      * @param {Object} item - The updated item.
@@ -901,6 +886,7 @@ export class LiveQuerySet {
             this.handleExternalCreateEvent(item);
         }
     }
+
     /**
      * Handles an external delete event.
      * @param {number|string} itemId - The primary key value of the deleted item.
@@ -945,6 +931,7 @@ export class LiveQuerySet {
         const metricKey = `count:${String(field || '')}`;
         return this._getOrCreateMetric(metricKey, value);
     }
+
     /**
      * Returns the sum metric.
      * @param {string} field - Field to sum.
@@ -955,6 +942,7 @@ export class LiveQuerySet {
         const metricKey = `sum:${String(field)}`;
         return this._getOrCreateMetric(metricKey, value);
     }
+
     /**
      * Returns the average metric.
      * @param {string} field - Field to average.
@@ -965,6 +953,7 @@ export class LiveQuerySet {
         const metricKey = `avg:${String(field)}`;
         return this._getOrCreateMetric(metricKey, value);
     }
+
     /**
      * Returns the minimum metric.
      * @param {string} field - Field to find the minimum.
@@ -975,6 +964,7 @@ export class LiveQuerySet {
         const metricKey = `min:${String(field)}`;
         return this._getOrCreateMetric(metricKey, value);
     }
+
     /**
      * Returns the maximum metric.
      * @param {string} field - Field to find the maximum.
@@ -985,6 +975,7 @@ export class LiveQuerySet {
         const metricKey = `max:${String(field)}`;
         return this._getOrCreateMetric(metricKey, value);
     }
+
     /**
      * Returns a single object matching the filter conditions from the cached data.
      * If not found, fetches from the backend.
@@ -1014,6 +1005,7 @@ export class LiveQuerySet {
         }
         return freshItem;
     }
+
     /**
      * Returns the first object from the live view.
      * @returns {Promise<Object|null>} The first object or null.
@@ -1022,6 +1014,7 @@ export class LiveQuerySet {
         const results = await this.fetch();
         return results.length > 0 ? results[0] : null;
     }
+
     /**
      * Returns the last object from the live view.
      * @returns {Promise<Object|null>} The last object or null.
