@@ -166,6 +166,9 @@ export const handleModelEvent = async (event) => {
         if (event.model && lqs.ModelClass && lqs.ModelClass.modelName !== event.model) {
             continue;
         }
+        lqs.refreshMetrics().catch(error => {
+            console.error('Error refreshing metrics:', error);
+        });
         if (event.operationId && activeOperationIds.has(event.operationId)) {
             continue;
         }
@@ -446,14 +449,6 @@ export class LiveQuerySet {
      * @returns {void} - No longer returns a promise
      */
     _notify(eventType) {
-        // If the event type is one that should trigger a metric refresh, do so asynchronously
-        if (eventType === 'create' || eventType === 'update' || eventType === 'delete') {
-            // Fire and forget - don't await
-            this.refreshMetrics().catch(error => {
-                console.error('Error refreshing metrics:', error);
-            });
-        }
-        
         // Call all callbacks immediately without waiting for refresh to complete
         for (const callback of this.callbacks) {
             callback(eventType);
