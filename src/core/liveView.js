@@ -8,7 +8,6 @@ import { EventType, getEventReceiver, setEventReceiver, setNamespaceResolver,
  } from './eventReceivers.js';
 import { initializeEventReceiver } from '../config.js';
 import { MultipleObjectsReturned, DoesNotExist } from "../flavours/django/errors.js";
-import * as arrayDiff from 'fast-array-diff';
 
 /**
  * Updates an array in place to match the target array with minimal operations
