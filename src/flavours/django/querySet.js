@@ -103,7 +103,6 @@ export class QuerySet {
    * @param {string} [config.initialQueryset] - The initial queryset identifier.
    * @param {SerializerOptions} [config.serializerOptions] - Serializer options.
    * @param {boolean} [config.materialized] - Whether the queryset is materialized.
-   * @param {T[]|null} [config.resultCache] - Cached results.
    */
   constructor(ModelClass, config = {}) {
     this.ModelClass = ModelClass;
@@ -116,7 +115,6 @@ export class QuerySet {
     this._initialQueryset = config.initialQueryset;
     this._serializerOptions = config.serializerOptions || {};
     this._materialized = config.materialized || false;
-    this._resultCache = config.resultCache || null;
   }
 
   /**
@@ -134,8 +132,7 @@ export class QuerySet {
       prefetchRelated: [...this._prefetchRelated],
       initialQueryset: this._initialQueryset,
       serializerOptions: { ...this._serializerOptions },
-      materialized: this._materialized,
-      resultCache: this._resultCache
+      materialized: this._materialized
     });
   }
 
@@ -766,11 +763,7 @@ export class QuerySet {
    * @param {SerializerOptions} [serializerOptions] - Optional serializer options.
    * @returns {Promise<T[]>} A promise that resolves to an array of model instances.
    */
-  async fetch(serializerOptions) {
-    if (this._resultCache) {
-      return this._resultCache;
-    }
-    
+  async fetch(serializerOptions) {    
     let querySet = this;
     
     if (serializerOptions) {
@@ -791,8 +784,6 @@ export class QuerySet {
     });
     
     const results = response.data.map(item => new this.ModelClass(item));
-    
-    this._resultCache = results;
     
     return results;
   }
