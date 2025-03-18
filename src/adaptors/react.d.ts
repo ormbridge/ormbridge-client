@@ -3,6 +3,18 @@ import { Model } from "../flavours/django/model";
 import { LiveQuerySet, LiveQuerySetOptions } from "../core/liveView";
 
 /**
+ * Custom hook to use a live metric with React state.
+ *
+ * @param metricFn - Function that returns a metric promise or null.
+ * @param defaultValue - Default value to use when metric is not available.
+ * @returns The current value of the metric.
+ */
+export declare function useLiveMetric<T = any>(
+  metricFn: (() => Promise<any>) | null,
+  defaultValue?: T
+): T | null;
+
+/**
  * React hook for creating and using a LiveQuerySet with reactive queries.
  *
  * @param queryInput - The QuerySet to make live or a function that returns a QuerySet.
@@ -36,9 +48,6 @@ import { LiveQuerySet, LiveQuerySetOptions } from "../core/liveView";
  *     () => User.objects.filter({ department: departmentId }).all(),
  *     { limit: 20 }
  *   );
- *   
- *   // The hook will automatically reinitialize when departmentId changes
- *   // ...
  * }
  * 
  * // With explicit dependencies
@@ -47,12 +56,11 @@ import { LiveQuerySet, LiveQuerySetOptions } from "../core/liveView";
  *   const [posts, query, isLoading] = useLiveView(
  *     queryFn,
  *     { limit: pageSize },
- *     [userId, pageSize] // Only reinitialize when these specific values change
+ *     [userId, pageSize]
  *   );
- *   // ...
  * }
  */
-export function useLiveView<T extends Model>(
+export declare function useLiveView<T extends Model>(
   queryInput: QuerySet<any, any, T, any> | (() => QuerySet<any, any, T, any>),
   options?: LiveQuerySetOptions,
   deps?: readonly any[]

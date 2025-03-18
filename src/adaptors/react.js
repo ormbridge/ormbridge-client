@@ -1,5 +1,63 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { liveView } from '../core/liveView.js';
+
+/**
+ * Custom hook to use a live metric with React state.
+ * This hook properly integrates metrics with React's state system.
+ * 
+ * @param {Function|null} metricFn - Function that returns a metric promise or null
+ * @param {any} defaultValue - Default value to use when metric is not available
+ * @returns {any} The current value of the metric
+ */
+export function useLiveMetric(metricFn, defaultValue = null) {
+  const [value, setValue] = useState(defaultValue);
+  const metricRef = useRef(null);
+  
+  useEffect(() => {
+    let isMounted = true;
+    
+    const setupMetric = async () => {
+      // Clean up any existing metric connection
+      if (metricRef.current && metricRef.current._setState) {
+        metricRef.current._setState = null;
+      }
+      
+      try {
+        // If no metric function is provided, do nothing
+        if (!metricFn) return;
+        
+        // Get the metric
+        const metric = await metricFn();
+        
+        // If component unmounted during async operation, abort
+        if (!isMounted) return;
+        
+        // Check if we got a valid metric
+        if (!metric) return;
+        
+        // Store reference for cleanup
+        metricRef.current = metric;
+        
+        // Connect to our state
+        metric.connect(setValue);
+      } catch (error) {
+        console.error("Error setting up metric:", error);
+      }
+    };
+    
+    setupMetric();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (metricRef.current && metricRef.current._setState) {
+        metricRef.current._setState = null;
+      }
+    };
+  }, [metricFn]);
+  
+  return value;
+}
 
 /**
  * React hook for creating and using a LiveQuerySet.
@@ -7,7 +65,7 @@ import { liveView } from '../core/liveView.js';
  * @param {Object|function} queryInput - The QuerySet to make live or a function that returns one
  * @param {object} [options={}] - Options for the LiveQuerySet
  * @param {array} [deps=[]] - Optional explicit dependencies for controlling when the query reinitializes
- * @returns {[Array, Object|null, boolean]} A tuple containing data, query, and loading state
+ * @returns {Array} An array containing [data, query, isLoading]
  */
 export function useLiveView(queryInput, options = {}, deps = []) {
   const [data, setData] = useState([]);
@@ -16,8 +74,8 @@ export function useLiveView(queryInput, options = {}, deps = []) {
   
   // If explicit deps are provided, use those.
   // Otherwise, generate deps based on options.
-  const effectDeps = deps.length > 0 
-    ? deps 
+  const effectDeps = deps.length > 0
+    ? deps
     : [queryInput, ...(typeof options === 'object' ? [JSON.stringify(options)] : [options])];
   
   useEffect(() => {
@@ -40,8 +98,43 @@ export function useLiveView(queryInput, options = {}, deps = []) {
           ? queryInput()
           : queryInput;
         
-        // Initialize the LiveQuerySet
-        const lqs = await liveView(currentQuery, [], options);
+        // Create a metric function that will enable React integration
+        const createMetricFn = (value) => {
+          // For compatibility with the core library
+          return {
+            // The initial value
+            _value: value,
+            // React setState will be stored here
+            _setState: null,
+            
+            // Standard property to maintain compatibility with Vue
+            get value() {
+              return this._value;
+            },
+            set value(newVal) {
+              // Only update if value has actually changed
+              if (this._value !== newVal) {
+                this._value = newVal;
+                
+                // Update React state if setState is available
+                if (this._setState) {
+                  this._setState(newVal);
+                }
+              }
+            },
+            
+            // Method to connect to component state
+            connect: function(setState) {
+              this._setState = setState;
+              // Initial state update
+              setState(this._value);
+              return this;
+            }
+          };
+        };
+        
+        // Initialize the LiveQuerySet with the metric function
+        const lqs = await liveView(currentQuery, [], options, createMetricFn);
         
         if (!isMounted) {
           lqs.destroy();
@@ -53,7 +146,17 @@ export function useLiveView(queryInput, options = {}, deps = []) {
         // Subscribe to changes
         unsubscribe = lqs.subscribe(() => {
           if (isMounted) {
+            console.log(`LiveView updated, new data:`, lqs.data);
             setData([...lqs.data]);
+            
+            // Force update metrics too when data changes - NEW
+            if (lqs.metrics) {
+              Object.values(lqs.metrics).forEach(metric => {
+                if (metric._setState) {
+                  metric._setState(metric._value);
+                }
+              });
+            }
           }
         });
         

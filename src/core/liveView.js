@@ -617,7 +617,7 @@ export class LiveQuerySet {
     /**
      * Filters the LiveQuerySet with additional conditions.
      * @param {Object} conditions - Filter conditions.
-     * @returns {LiveQuerySet} A new LiveQuerySet instance.
+     * @returns {LiveQuerySet} A new LiveQuerySet instance with relayed events.
      */
     filter(conditions) {
         // Build a filter function based solely on the new conditions.
@@ -626,12 +626,36 @@ export class LiveQuerySet {
                 return item[key] === value;
             });
         };
+        
         // Create a new QuerySet that is already filtered on the server side.
         const newQs = this.qs.filter(conditions);
-
-        // Since the originalFilterConditions are already part of the qs,
-        // we can simply use the new conditions as the filter.
-        return new LiveQuerySet(newQs, this.dataArray, this.options, newFilter, conditions);
+        
+        // Create the filtered LiveQuerySet
+        const filteredLiveQs = new LiveQuerySet(
+            newQs, 
+            this.dataArray, 
+            this.options, 
+            newFilter, 
+            conditions,
+            this.createMetricFn
+        );
+        
+        // Store reference to the original LiveQuerySet
+        const originalLiveQs = this;
+        
+        // Subscribe to the filtered instance's notifications and relay them to the original
+        filteredLiveQs.subscribe(eventType => {
+            // Directly call the original's _notify method
+            originalLiveQs._notify(eventType);
+        });
+        
+        // Also relay error events
+        filteredLiveQs.onError((error, operation) => {
+            // Directly call the original's _notifyError method
+            originalLiveQs._notifyError(error, operation);
+        });
+        
+        return filteredLiveQs;
     }
 
     /**
@@ -655,10 +679,9 @@ export class LiveQuerySet {
                         deletedItems.unshift(this.dataArray[i]); // Add to front to maintain original order
                         deletedIndexes.unshift(i);               // Store the original index
                         this.dataArray.splice(i, 1);
-                        this._notify('delete');
                     }
                 }
-                
+                this._notify('delete');
                 // If nothing was deleted, we're done
                 if (deletedItems.length === 0) {
                     return;
@@ -765,9 +788,9 @@ export class LiveQuerySet {
                     affectedIndexes.push(i);
                     originals.set(i, Object.assign({}, item));
                     Object.assign(this.dataArray[i], updates);
-                    this._notify('update');
                 }
             }
+            this._notify('update');
             try {
                 await this.qs.executeQuery(Object.assign({}, this.qs.build(), {
                     type: 'update',
@@ -799,41 +822,54 @@ export class LiveQuerySet {
         if (this.activeMetrics.size === 0) {
             return;
         }
-        const refreshPromises = [];
-        for (const [key, metric] of this.activeMetrics.entries()) {
-            const [type, field] = key.split(':');
-            const refreshPromise = (async () => {
-                try {
-                    let newValue;
-                    const oldValue = metric.value;
-                    switch (type) {
-                        case 'count':
-                            newValue = await this.qs.count(field || undefined);
-                            break;
-                        case 'sum':
-                            newValue = await this.qs.sum(field);
-                            break;
-                        case 'avg':
-                            newValue = await this.qs.avg(field);
-                            break;
-                        case 'min':
-                            newValue = await this.qs.min(field);
-                            break;
-                        case 'max':
-                            newValue = await this.qs.max(field);
-                            break;
-                    }
-                    if (newValue !== undefined) {
-                        metric.value = newValue;
-                    }
-                }
-                catch (error) {
-                    console.error(`Error refreshing metric ${key}:`, error);
-                }
-            })();
-            refreshPromises.push(refreshPromise);
+        
+        // Clear any existing debounce timer
+        if (this._metricsDebounceTimer) {
+            clearTimeout(this._metricsDebounceTimer);
         }
-        await Promise.all(refreshPromises);
+        
+        // Set a new debounce timer
+        return new Promise(resolve => {
+            this._metricsDebounceTimer = setTimeout(async () => {
+                const refreshPromises = [];
+                for (const [key, metric] of this.activeMetrics.entries()) {
+                    const [type, field] = key.split(':');
+                    const refreshPromise = (async () => {
+                        try {
+                            let newValue;
+                            const oldValue = metric.value;
+                            switch (type) {
+                                case 'count':
+                                    newValue = await this.qs.count(field || undefined);
+                                    break;
+                                case 'sum':
+                                    newValue = await this.qs.sum(field);
+                                    break;
+                                case 'avg':
+                                    newValue = await this.qs.avg(field);
+                                    break;
+                                case 'min':
+                                    newValue = await this.qs.min(field);
+                                    break;
+                                case 'max':
+                                    newValue = await this.qs.max(field);
+                                    break;
+                            }
+                            if (newValue !== undefined) {
+                                metric.value = newValue;
+                            }
+                        }
+                        catch (error) {
+                            console.error(`Error refreshing metric ${key}:`, error);
+                        }
+                    })();
+                    refreshPromises.push(refreshPromise);
+                }
+                await Promise.all(refreshPromises);
+                this._metricsDebounceTimer = null;
+                resolve();
+            }, 100); // 100ms debounce time for more responsiveness
+        });
     }
 
     /**
@@ -928,7 +964,6 @@ export class LiveQuerySet {
     /**
      * Handles an external create event.
      * @param {Object} item - The created item.
-     * @param {boolean} [shouldApplyFilters=true] - Whether to apply filters.
      */
     handleExternalCreateEvent(item) {
         // Skip if the item was created by an active operation
