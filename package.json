@@ -19,12 +19,12 @@
       "require": "./dist/cli/index.js"
     },
     "./react": {
-      "import": "./dist/adaptors/react.js",
-      "require": "./dist/adaptors/react.js"
+      "import": "./dist/react-entry.js",
+      "require": "./dist/react-entry.js"
     },
     "./vue": {
-      "import": "./dist/adaptors/vue.js",
-      "require": "./dist/adaptors/vue.js"
+      "import": "./dist/vue-entry.js",
+      "require": "./dist/vue-entry.js"
     }
   },
   "scripts": {

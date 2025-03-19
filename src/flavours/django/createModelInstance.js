@@ -20,19 +20,13 @@ export function createModelInstance(fullModelCtor, summaryModelCtor, data) {
     return data;
   }
   
-  // Use the primaryKeyField from the full model constructor, or default to 'id'
   const pkField = fullModelCtor.primaryKeyField || 'id';
   const summaryKeys = [pkField, 'repr', 'img'].sort();
   const dataKeys = Object.keys(data).sort();
   
-  // Check if the data keys exactly match the expected summary keys.
-  // Using isEqual ensures both arrays have the same elements regardless of order.
-  const isSummary = isEqual(
-    intersection(summaryKeys, dataKeys).sort(),
-    summaryKeys
-  );
+  const isExactlySummary = isEqual(dataKeys, summaryKeys);
   
-  if (isSummary) {
+  if (isExactlySummary) {
     return new summaryModelCtor(data);
   } else {
     return new fullModelCtor(data);

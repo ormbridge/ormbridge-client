@@ -337,9 +337,9 @@ export declare class {{className}}QuerySet extends QuerySet<any> {
   search(searchQuery: string, searchFields?: Array<string>): {{className}}QuerySet;
   
   // Terminal methods
-  get(filters?: {{className}}FilterData): Promise<{{className}}>;
-  first(): Promise<{{className}} | null>;
-  last(): Promise<{{className}} | null>;
+  get(filters?: {{className}}FilterData, serializerOptions?: SerializerOptions): Promise<{{className}}>;
+  first(serializerOptions?: SerializerOptions): Promise<{{className}} | null>;
+  last(serializerOptions?: SerializerOptions): Promise<{{className}} | null>;
   all(): {{className}}QuerySet;
   count(field?: string): Promise<number>;
   update(updates: {{className}}UpdateData): Promise<[number, Record<string, number>]>;
@@ -356,7 +356,7 @@ export declare class {{className}}Manager extends Manager {
   filter(conditions: {{className}}FilterData): {{className}}QuerySet;
   exclude(conditions: {{className}}FilterData): {{className}}QuerySet;
   all(): {{className}}QuerySet;
-  get(filters?: {{className}}FilterData): Promise<{{className}}>;
+  get(filters?: {{className}}FilterData, serializerOptions?: SerializerOptions): Promise<{{className}}>;
   create(data: {{className}}CreateData): Promise<{{className}}>;
   delete(): Promise<[number, Record<string, number>]>;
 }
@@ -372,8 +372,8 @@ export declare class {{className}}LiveQuerySet extends LiveQuerySet {
   filter(conditions: {{className}}FilterData): {{className}}LiveQuerySet;
   
   // Terminal methods
-  fetch(): Promise<{{className}}[]>;
-  get(filters?: {{className}}FilterData): Promise<{{className}}>;
+  fetch(serializerOptions?: SerializerOptions): Promise<{{className}}[]>;
+  get(filters?: {{className}}FilterData, serializerOptions?: SerializerOptions): Promise<{{className}}>;
   create(item: {{className}}CreateData): Promise<{{className}}>;
   update(updates: {{className}}UpdateData): Promise<{{className}}[]>;
   delete(): Promise<void>;
@@ -393,8 +393,8 @@ export class {{className}}APIManager extends RuntimeAPIManager {
     return super.filter(conditions as any);
   }
   
-  get(filters?: {{className}}FilterData): Promise<{{className}}> {
-    return super.get(filters as any);
+  get(filters?: {{className}}FilterData, serializerOptions?: SerializerOptions): Promise<{{className}}> {
+    return super.get(filters as any, serializerOptions);
   }
   
   all() {
@@ -759,34 +759,89 @@ function getDefaultValueForType(prop) {
 }
 
 /**
- * Generates an index file exporting all generated files.
- * @param {Array<{model: string, relativePath: string}>} generatedFiles
- * @param {string} outputParent
+ * Generates app-level index files and a root index file that imports from app indexes.
+ * @param {Array<{model: string, relativePath: string, backend: string}>} generatedFiles
+ * @param {Object.<string, BackendConfig>} backendConfigs
  * @returns {Promise<void>}
  */
-async function generateIndexFile(generatedFiles, outputParent) {
+async function generateAppLevelIndexFiles(generatedFiles, backendConfigs) {
+  // Group files by backend and app
+  const filesByBackendAndApp = generatedFiles.reduce((acc, file) => {
+    const backend = file.backend;
+    const parts = file.model.split('.');
+    const app = parts.length > 1 ? parts[0] : 'root'; // Use 'root' for models without an app
+    
+    acc[backend] = acc[backend] || {};
+    acc[backend][app] = acc[backend][app] || [];
+    acc[backend][app].push(file);
+    
+    return acc;
+  }, {});
+
   const indexTemplate = Handlebars.compile(
     `{{#each files}}
 export * from '{{this.relativePath}}';
 {{/each}}`
   );
 
-  const indexContent = indexTemplate({ files: generatedFiles });
-  await fs.writeFile(
-    path.join(outputParent, 'index.js'),
-    indexContent.trim()
-  );
-  
-  await fs.writeFile(
-    path.join(outputParent, 'index.d.ts'),
-    indexContent.trim()
-  );
+  // Generate app-level index files for each backend and app
+  for (const [backendName, appGroups] of Object.entries(filesByBackendAndApp)) {
+    const backend = backendConfigs[backendName];
+    const rootExports = [];
+    
+    for (const [app, files] of Object.entries(appGroups)) {
+      if (app === 'root') {
+        // Handle models without an app prefix
+        for (const file of files) {
+          rootExports.push(`export * from '${file.relativePath}';`);
+        }
+      } else {
+        // Create app-level index files with proper relative paths
+        const appDir = path.join(backend.GENERATED_TYPES_DIR, app.toLowerCase());
+        
+        // Create relative paths for imports within the app directory
+        // These should be relative to the app directory, not the backend root
+        const appFiles = files.map(file => {
+          // Get the last part of the path (the actual file name without extension)
+          const fileName = path.basename(file.relativePath);
+          return {
+            ...file,
+            relativePath: './' + fileName
+          };
+        });
+        
+        const indexContent = indexTemplate({ files: appFiles });
+        await fs.writeFile(
+          path.join(appDir, 'index.js'),
+          indexContent.trim()
+        );
+        await fs.writeFile(
+          path.join(appDir, 'index.d.ts'),
+          indexContent.trim()
+        );
+        
+        // Add an export for this app's index to the backend root index
+        rootExports.push(`export * from './${app.toLowerCase()}/index';`);
+      }
+    }
+    
+    // Write the backend root index file
+    await fs.writeFile(
+      path.join(backend.GENERATED_TYPES_DIR, 'index.js'),
+      rootExports.join('\n')
+    );
+    await fs.writeFile(
+      path.join(backend.GENERATED_TYPES_DIR, 'index.d.ts'),
+      rootExports.join('\n')
+    );
+  }
 }
 
 // --------------------
 // Main Runner: Fetch models and prompt selection
 // --------------------
 
+// Update main function to use this new approach
 async function main() {
   // Load configuration from file (CLI-only or tests) before any other operations.
   loadConfigFromFile();
@@ -864,12 +919,10 @@ async function main() {
       progressBar.increment();
     }
     progressBar.stop();
-
-    await generateIndexFile(
-      allGeneratedFiles.filter(file => file.backend === group.backend.NAME),
-      group.backend.GENERATED_TYPES_DIR
-    );
   }
+
+  // Use the new app-level index file generator
+  await generateAppLevelIndexFiles(allGeneratedFiles, backendConfigs);
 
   console.log(`✨ Generated JavaScript files with TypeScript declarations for ${selectedModels.length} models across ${Object.keys(backendConfigs).length} backends.`);
 }

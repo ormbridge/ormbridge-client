@@ -112,11 +112,12 @@ export class Manager {
   /**
    * Retrieves a single model instance matching the provided filters.
    *
-   * @param {*} [filters] - The filters to apply.
-   * @returns {Promise<*>} A promise that resolves to the model instance.
+   * @param {Object} [filters] - The filters to apply.
+   * @param {SerializerOptions} [serializerOptions] - Options for serialization.
+   * @returns {Promise<Model>} A promise that resolves to the model instance.
    */
-  async get(filters) {
-    return this.newQuerySet().get(filters);
+  async get(filters, serializerOptions) {
+    return this.newQuerySet().get(filters, serializerOptions);
   }
 
   /**
