@@ -1,6 +1,7 @@
 import { QuerySet } from './querySet.js';
 import { Model } from './model.js';
 import axios from 'axios';
+import { getConfig } from '../../config.js';
 
 /**
  * @typedef {Object} SerializerOptions
