@@ -13,4 +13,4 @@ export * from './flavours/django/modelSummary.js';
 export * from './config.js';
 
 // Only React-specific imports
-export { useLiveView } from './adaptors/react.js';
+export { useLiveView, useLiveMetric } from './adaptors/react.js';
