@@ -53,22 +53,29 @@ export class Model {
 
   /**
    * Validates that the provided data object only contains keys
-   * defined in the model's allowed fields.
+   * defined in the model's allowed fields. Supports nested fields
+   * using double underscore notation (e.g., author__name).
    *
    * @param {Object} data - The object to validate.
    * @throws {ValidationError} If an unknown key is found.
    */
   static validateFields(data) {
-    const allowedFields = this.fields
-    allowedFields.push('repr')
+    const allowedFields = this.fields;
+    allowedFields.push('repr');
+    
     Object.keys(data).forEach((key) => {
-      if (!allowedFields.includes(key)) {
+      // Handle nested fields by splitting on double underscore
+      // and taking just the base field name
+      const baseField = key.split('__')[0];
+      
+      if (!allowedFields.includes(baseField)) {
         throw new ValidationError(
-          `Invalid field "${key}". Allowed fields are: ${allowedFields.join(', ')}`
+          `Invalid field: ${baseField}. Allowed fields are: ${allowedFields.join(', ')}`
         );
       }
     });
   }
+
 
   /**
    * Serializes the model instance.
