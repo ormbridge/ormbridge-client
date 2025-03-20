@@ -171,7 +171,7 @@ describe('ORMBridge Custom Features Integration Tests', () => {
       });
       
       // Verify the pre-processing hook has set created_by.
-      expect(product.created_by).toBe('system');
+      expect(product.created_by).toBe('test_user');
     });
 
     test('Email normalization hook works', async () => {

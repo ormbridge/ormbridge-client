@@ -155,13 +155,13 @@ describe('updateOrCreate() Method Tests', () => {
     expect(original.related.id).toBe(relatedInstance.pk);
   });
 
-  it('should throw ValidationError for invalid field names in defaults', async () => {
-    await expect(
-      DummyModel.objects.updateOrCreate(
-        { name: 'InvalidFieldTest' },
-        { defaults: { nonexistent_field: 'test', related: relatedInstance.pk } }
-      )
-    ).rejects.toBeInstanceOf(ValidationError);
+  it('should not throw ValidationError for invalid field names in defaults', async () => {
+    // we refactored the backend so that it uses DRF serializers for validation which will ignore unknown fields
+    let result = await DummyModel.objects.updateOrCreate(
+      { name: 'InvalidFieldTest' },
+      { defaults: { nonexistent_field: 'test', related: relatedInstance.pk } }
+    )
+    expect(result).toBeInstanceOf(ResultTuple);
   });
 
   // Lookup Field Tests
