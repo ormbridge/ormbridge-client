@@ -10,8 +10,7 @@ import { Manager } from './manager.js';
 /**
  * @typedef {Object} ModelSummaryFields
  * @property {(number|string)} id - The identifier.
- * @property {string} repr - The representation string.
- * @property {string} img - The image URL.
+ * @property {{ str: string, img?: string }} repr - The representation object.
  */
 
 /**
@@ -46,12 +45,14 @@ export class ModelSummary {
       throw new Error(`Summary data must include '${pkField}' field.`);
     }
     
-    if (!('repr' in this)) {
-      throw new Error(`Summary data must include 'repr' field but was: ${JSON.stringify(data)}`);
-    }
-    
-    if (!('img' in this)) {
-      throw new Error(`Summary data must include 'img' field but was: ${JSON.stringify(data)}`);
+    if (
+      !('repr' in this) ||
+      typeof this.repr !== 'object' ||
+      !('str' in this.repr)
+    ) {
+      throw new Error(
+        `Summary data must include a 'repr' object with a 'str' property, but was: ${JSON.stringify(data)}`
+      );
     }
   }
 

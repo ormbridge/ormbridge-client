@@ -21,7 +21,7 @@ export function createModelInstance(fullModelCtor, summaryModelCtor, data) {
   }
   
   const pkField = fullModelCtor.primaryKeyField || 'id';
-  const summaryKeys = [pkField, 'repr', 'img'].sort();
+  const summaryKeys = [pkField, 'repr'].sort();
   const dataKeys = Object.keys(data).sort();
   
   const isExactlySummary = isEqual(dataKeys, summaryKeys);

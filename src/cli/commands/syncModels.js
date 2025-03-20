@@ -153,6 +153,7 @@ export class {{className}} extends Model {
   static schema = schemaData;
 
   constructor(data) {
+    {{className}}.validateFields(data);
     super(data);
 {{#each properties}}
   {{#if isRelationship}}
@@ -415,8 +416,10 @@ export class {{className}}APIManager extends RuntimeAPIManager {
 
 export interface {{summaryInterfaceName}} extends ModelSummaryFields {
   {{primaryKeyField}}: number;
-  repr: string;
-  img: string;
+  repr: {
+    str: string;
+    img?: string;
+  };
 }
 
 // Class declarations
@@ -443,8 +446,10 @@ export declare class {{summaryClassName}} extends ModelSummary implements {{summ
   static fullModelConstructor: typeof {{className}};
 
   {{primaryKeyField}}: number;
-  repr: string;
-  img: string;
+  repr: {
+    str: string;
+    img?: string;
+  };
 
   constructor(data: Partial<{{summaryInterfaceName}}>);
 }

@@ -1,6 +1,7 @@
 import { Manager } from './manager.js';
 import { QuerySet } from './querySet.js';
 import { getConfig } from '../../config.js';
+import { ValidationError } from './errors.js';
 
 /**
  * A constructor for a Model.
@@ -48,6 +49,25 @@ export class Model {
   set pk(value) {
     const ModelClass = this.constructor;
     this[ModelClass.primaryKeyField] = value;
+  }
+
+  /**
+   * Validates that the provided data object only contains keys
+   * defined in the model's allowed fields.
+   *
+   * @param {Object} data - The object to validate.
+   * @throws {ValidationError} If an unknown key is found.
+   */
+  static validateFields(data) {
+    const allowedFields = this.fields
+    allowedFields.push('repr')
+    Object.keys(data).forEach((key) => {
+      if (!allowedFields.includes(key)) {
+        throw new ValidationError(
+          `Invalid field "${key}". Allowed fields are: ${allowedFields.join(', ')}`
+        );
+      }
+    });
   }
 
   /**
