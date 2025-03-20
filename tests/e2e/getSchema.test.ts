@@ -27,7 +27,7 @@ describe('getSchema Method Tests', () => {
 
   it('should successfully retrieve schema information', async () => {
     // Execute the method against the real server
-    const schema = await DummyModel.objects.getSchema();
+    const schema = DummyModel.schema
 
     // Verify the schema has the expected structure
     expect(schema).toBeDefined();
@@ -67,19 +67,5 @@ describe('getSchema Method Tests', () => {
       expect(sampleRelationship).toHaveProperty('type');
       expect(sampleRelationship).toHaveProperty('model');
     }
-  });
-
-  it('should throw error when backend configuration is not found', async () => {
-    // Temporarily modify the model's config key to something that doesn't exist
-    const originalConfigKey = DummyModel.configKey;
-    DummyModel.configKey = 'non_existent_config';
-
-    // Execute and expect error
-    await expect(DummyModel.objects.getSchema()).rejects.toThrow(
-      `No backend configuration found for key: non_existent_config`
-    );
-
-    // Reset the config key
-    DummyModel.configKey = originalConfigKey;
   });
 });

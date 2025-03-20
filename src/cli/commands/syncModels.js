@@ -113,6 +113,7 @@ const JS_MODEL_TEMPLATE = `/**
 import _ from 'lodash-es';
 import { Model, APIManager, QuerySet } from '{{modulePath}}';
 import { createModelInstance } from '{{modulePath}}';
+import schemaData from './{{className}}.schema.json';
 {{#if jsImports}}
 {{#each jsImports}}
 {{{this}}}
@@ -148,6 +149,8 @@ export class {{className}} extends Model {
   static modelName = '{{modelName}}';
   static primaryKeyField = '{{primaryKeyField}}';
   static objects = new {{className}}Manager({{className}});
+  static fields = [{{#each properties}}'{{name}}'{{#unless @last}}, {{/unless}}{{/each}}];
+  static schema = schemaData;
 
   constructor(data) {
     super(data);
@@ -170,8 +173,6 @@ export class {{className}} extends Model {
     {{/ifDefaultProvided}}
   {{/if}}
 {{/each}}
-  // Prevents further modifications to the instance
-  return this._finalizeConstruction();
   }
 
   // Serialize only the allowed fields
@@ -531,6 +532,9 @@ async function generateSchemaForModel(backend, model) {
     outDir = path.join(outDir, ...parts.slice(0, -1).map(p => p.toLowerCase()));
   }
   await fs.mkdir(outDir, { recursive: true });
+
+  const schemaFilePath = path.join(outDir, `${className.toLowerCase()}.schema.json`);
+  await fs.writeFile(schemaFilePath, JSON.stringify(schema, null, 2));
 
   const jsContent = jsTemplate(templateData);
   const baseName = parts[parts.length - 1].toLowerCase();

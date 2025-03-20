@@ -31,17 +31,6 @@ export class Model {
   }
 
   /**
-   * Finalizes the construction of the model by preventing extensions.
-   * This should be called at the end of every child class constructor.
-   * 
-   * @private
-   */
-  _finalizeConstruction() {
-    Object.preventExtensions(this);
-    return this;
-  }
-
-  /**
    * Returns the primary key of the model instance.
    *
    * @returns {number|undefined} The primary key.

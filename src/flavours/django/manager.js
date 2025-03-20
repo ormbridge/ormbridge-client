@@ -54,40 +54,7 @@ export class Manager {
     this.ModelClass = ModelClass;
     this.QuerySetClass = QuerySetClass;
   }
-
-  /**
-   * Retrieves the schema information for the model from the backend.
-   * 
-   * @returns {Promise<Object>} A promise that resolves to the schema information.
-   * @throws {Error} If the backend configuration is not found or the API call fails.
-   */
-  async getSchema() {
-    const config = getConfig();
-    const backend = config.backendConfigs[this.ModelClass.configKey];
-    
-    if (!backend) {
-      throw new Error(`No backend configuration found for key: ${this.ModelClass.configKey}`);
-    }
-    
-    const baseUrl = backend.API_URL.replace(/\/+$/, '');
-    const finalUrl = `${baseUrl}/${this.ModelClass.modelName}/get-schema/`;
-    const headers = backend.getAuthHeaders ? backend.getAuthHeaders() : {};
-    
-    try {
-      const response = await axios.get(finalUrl, { headers });
-      return response.data;
-    } catch (error) {
-      if (error.response && error.response.data) {
-        const parsedError = parseORMBridgeError(error.response.data);
-        if (Error.captureStackTrace) {
-          Error.captureStackTrace(parsedError, this.getSchema);
-        }
-        throw parsedError;
-      }
-      throw new Error(`Schema request failed: ${error.message}`);
-    }
-  }
-
+  
   /**
    * Creates a new QuerySet instance.
    *
