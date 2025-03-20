@@ -583,6 +583,19 @@ function getImportPath(currentApp, relModel) {
  * @param {string} configKey
  * @returns {TemplateData}
  */
+/**
+ * Prepares template data for Handlebars.
+ * @param {string} modulePath
+ * @param {string} className
+ * @param {string} interfaceName
+ * @param {string} summaryClassName
+ * @param {string} summaryInterfaceName
+ * @param {string} rawModelName
+ * @param {SchemaDefinition} schema
+ * @param {string} currentApp
+ * @param {string} configKey
+ * @returns {TemplateData}
+ */
 function prepareTemplateData(
   modulePath,
   className,
@@ -653,15 +666,21 @@ function prepareTemplateData(
     }
   }
 
-  const jsImports = [];
-  const tsImports = [];
+  // Use Sets to ensure unique imports
+  const jsImportSet = new Set();
+  const tsImportSet = new Set();
+  
   if (schema.relationships) {
     for (const [propName, rel] of Object.entries(schema.relationships)) {
       const importPath = getImportPath(currentApp, rel.model);
-      jsImports.push(`import { ${rel.class_name}, ${rel.class_name}Summary } from '${importPath}';`);
-      tsImports.push(`import { ${rel.class_name}Fields, ${rel.class_name}SummaryFields, ${rel.class_name}QuerySet, ${rel.class_name}LiveQuerySet } from '${importPath}';`);
+      jsImportSet.add(`import { ${rel.class_name}, ${rel.class_name}Summary } from '${importPath}';`);
+      tsImportSet.add(`import { ${rel.class_name}Fields, ${rel.class_name}SummaryFields, ${rel.class_name}QuerySet, ${rel.class_name}LiveQuerySet } from '${importPath}';`);
     }
   }
+
+  // Convert Sets to Arrays
+  const jsImports = Array.from(jsImportSet);
+  const tsImports = Array.from(tsImportSet);
 
   let primaryKeyField = 'id';
   if (schema.primary_key_field !== undefined) {
