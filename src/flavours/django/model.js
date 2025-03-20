@@ -61,9 +61,10 @@ export class Model {
    */
   static validateFields(data) {
     const allowedFields = this.fields;
-    allowedFields.push('repr');
     
-    Object.keys(data).forEach((key) => {
+    for (const key of Object.keys(data)) {
+      if (key === 'repr') continue;
+      
       // Handle nested fields by splitting on double underscore
       // and taking just the base field name
       const baseField = key.split('__')[0];
@@ -73,7 +74,7 @@ export class Model {
           `Invalid field: ${baseField}. Allowed fields are: ${allowedFields.join(', ')}`
         );
       }
-    });
+    }
   }
 
 
