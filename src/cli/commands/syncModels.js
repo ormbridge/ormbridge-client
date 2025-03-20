@@ -170,6 +170,8 @@ export class {{className}} extends Model {
     {{/ifDefaultProvided}}
   {{/if}}
 {{/each}}
+  // Prevents further modifications to the instance
+  return this._finalizeConstruction();
   }
 
   // Serialize only the allowed fields

@@ -27,7 +27,18 @@ export class Model {
    * @param {any} [data={}] - The data for initialization.
    */
   constructor(data = {}) {
-    Object.assign(this, data);
+    // The constructor doesnt need to do anything, as the data is assigned in the subclass constructor
+  }
+
+  /**
+   * Finalizes the construction of the model by preventing extensions.
+   * This should be called at the end of every child class constructor.
+   * 
+   * @private
+   */
+  _finalizeConstruction() {
+    Object.preventExtensions(this);
+    return this;
   }
 
   /**
