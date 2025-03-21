@@ -132,6 +132,7 @@ export class ConfigError extends ORMBridgeError {
  */
 export function parseORMBridgeError(errorResponse) {
   const { status, type, detail } = errorResponse;
+  console.log(JSON.stringify(errorResponse))
   
   // Handle undefined type/status case (like in permission denied)
   if (type === undefined && detail === 'Invalid token.') {

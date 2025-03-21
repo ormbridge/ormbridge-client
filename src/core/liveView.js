@@ -8,6 +8,12 @@ import { EventType, getEventReceiver, setEventReceiver, setNamespaceResolver,
  } from './eventReceivers.js';
 import { initializeEventReceiver } from '../config.js';
 import { MultipleObjectsReturned, DoesNotExist } from "../flavours/django/errors.js";
+import { 
+    applyOptimisticMetricCreate, 
+    applyOptimisticMetricDelete, 
+    applyOptimisticMetricUpdate,
+    getFilteredItems
+} from './optimisticMetricHelpers.js';
 
 /**
  * Updates an array in place to match the target array with minimal operations
@@ -382,7 +388,7 @@ export class LiveQuerySet {
      */
 
     // Update to the constructor to initialize these new options
-    constructor(qs, dataArray, options, filterFn, filterConditions, createMetricFn) {
+    constructor(qs, dataArray, options, filterFn, filterConditions, createMetricFn, parent) {
         this.qs = qs;
         this.dataArray = dataArray;
         this.filterFn = filterFn || (() => true);
@@ -391,6 +397,7 @@ export class LiveQuerySet {
         this.originalFilterConditions = filterConditions;
         this.ModelClass = this.qs.ModelClass;
         this.createMetricFn = createMetricFn ? createMetricFn : (value) => ({ value });
+        this.parent = parent;
         
         // Initialize insertion behavior with defaults
         this.insertBehavior = {
@@ -637,7 +644,8 @@ export class LiveQuerySet {
             this.options, 
             newFilter, 
             conditions,
-            this.createMetricFn
+            this.createMetricFn,
+            this
         );
         
         // Store reference to the original LiveQuerySet
@@ -659,75 +667,15 @@ export class LiveQuerySet {
     }
 
     /**
-     * Deletes items matching the filter.
-     * @returns {Promise<void>}
-     */
-    async delete() {
-        if (arguments.length > 0) {
-            throw new Error('delete() does not accept arguments and will delete the entire queryset. Use filter() before calling delete() to select elements.');
-        }
-        
-        try {
-            await withOperationId(async (operationId) => {
-                // Store deleted items for potential rollback
-                const deletedItems = [];
-                const deletedIndexes = [];
-                
-                // Remove matching items and keep track of them
-                for (let i = this.dataArray.length - 1; i >= 0; i--) {
-                    if (this.filterFn(this.dataArray[i])) {
-                        deletedItems.unshift(this.dataArray[i]); // Add to front to maintain original order
-                        deletedIndexes.unshift(i);               // Store the original index
-                        this.dataArray.splice(i, 1);
-                    }
-                }
-                this._notify('delete');
-                // If nothing was deleted, we're done
-                if (deletedItems.length === 0) {
-                    return;
-                }
-                
-                try {
-                    // Execute delete operation on the server
-                    await this.qs.executeQuery(Object.assign({}, this.qs.build(), {
-                        type: 'delete',
-                        operationId,
-                        namespace: this.namespace
-                    }));
-                } catch (error) {
-                    // Rollback: restore deleted items to their original positions
-                    this._notifyError(error, 'delete');
-                    for (let i = 0; i < deletedItems.length; i++) {
-                        const index = deletedIndexes[i];
-                        // If index is beyond current array length, simply push to end
-                        if (index >= this.dataArray.length) {
-                            this.dataArray.push(deletedItems[i]);
-                        } else {
-                            // Otherwise, insert at original position
-                            this.dataArray.splice(index, 0, deletedItems[i]);
-                        }
-                        this._notify('create'); // Notify about the restored item
-                    }
-                    
-                    // Re-throw to be caught by the outer try/catch
-                    throw error;
-                }
-            });
-        } catch (error) {
-            // Re-throw for anyone awaiting
-            throw error;
-        }
-    }
-
-    /**
-     * Creates a new item.
-     * @param {Object} item - The item data.
-     * @returns {Promise<Object>} The created item.
+     * Modified create method with optimistic metric updates
      */
     async create(item) {
         return await withOperationId(async (operationId) => {
             const tempId = `temp_${Date.now()}`;
             const optimisticItem = Object.assign({}, item, { id: tempId });
+            
+            // Apply optimistic metric updates
+            const rollbackMetrics = applyOptimisticMetricCreate(this, optimisticItem);
             
             // Use the helper function for inserting optimistic item
             handleItemInsertion(
@@ -760,6 +708,11 @@ export class LiveQuerySet {
             }
             catch (error) {
                 this._notifyError(error, 'create');
+                
+                // Roll back metric updates
+                rollbackMetrics();
+                
+                // Roll back optimistic create
                 const tempIndex = this.dataArray.findIndex(x => x.id === tempId);
                 if (tempIndex !== -1) {
                     this.dataArray.splice(tempIndex, 1);
@@ -769,11 +722,80 @@ export class LiveQuerySet {
             }
         });
     }
-
+    
     /**
-     * Updates items matching the filter.
-     * @param {Object} updates - Update data.
-     * @returns {Promise<Array>} The updated items.
+     * Modified delete method with optimistic metric updates
+     */
+    async delete() {
+        if (arguments.length > 0) {
+            throw new Error('delete() does not accept arguments and will delete the entire queryset. Use filter() before calling delete() to select elements.');
+        }
+        
+        try {
+            await withOperationId(async (operationId) => {
+                // Store deleted items for potential rollback
+                const deletedItems = [];
+                const deletedIndexes = [];
+                
+                // Get a copy of items that will be deleted for metric calculations
+                const itemsToDelete = [...this.dataArray.filter(this.filterFn)];
+                
+                // Apply optimistic metric updates before modifying the array
+                const rollbackMetrics = applyOptimisticMetricDelete(this, itemsToDelete);
+                
+                // Remove matching items and keep track of them
+                for (let i = this.dataArray.length - 1; i >= 0; i--) {
+                    if (this.filterFn(this.dataArray[i])) {
+                        deletedItems.unshift(this.dataArray[i]); // Add to front to maintain original order
+                        deletedIndexes.unshift(i);               // Store the original index
+                        this.dataArray.splice(i, 1);
+                    }
+                }
+                this._notify('delete');
+                // If nothing was deleted, we're done
+                if (deletedItems.length === 0) {
+                    return;
+                }
+                
+                try {
+                    // Execute delete operation on the server
+                    await this.qs.executeQuery(Object.assign({}, this.qs.build(), {
+                        type: 'delete',
+                        operationId,
+                        namespace: this.namespace
+                    }));
+                } catch (error) {
+                    // Rollback: restore deleted items to their original positions
+                    this._notifyError(error, 'delete');
+                    
+                    // Roll back metric updates
+                    rollbackMetrics();
+                    
+                    // Roll back data array changes
+                    for (let i = 0; i < deletedItems.length; i++) {
+                        const index = deletedIndexes[i];
+                        // If index is beyond current array length, simply push to end
+                        if (index >= this.dataArray.length) {
+                            this.dataArray.push(deletedItems[i]);
+                        } else {
+                            // Otherwise, insert at original position
+                            this.dataArray.splice(index, 0, deletedItems[i]);
+                        }
+                        this._notify('create'); // Notify about the restored item
+                    }
+                    
+                    // Re-throw to be caught by the outer try/catch
+                    throw error;
+                }
+            });
+        } catch (error) {
+            // Re-throw for anyone awaiting
+            throw error;
+        }
+    }
+    
+    /**
+     * Modified update method with optimistic metric updates
      */
     async update(updates) {
         if (arguments.length > 1){
@@ -782,6 +804,13 @@ export class LiveQuerySet {
         return await withOperationId(async (operationId) => {
             const affectedIndexes = [];
             const originals = new Map();
+            
+            // Get a copy of items that will be updated for metric calculations
+            const itemsToUpdate = [...this.dataArray.filter(this.filterFn)];
+            
+            // Apply optimistic metric updates (currently a no-op as per requirements)
+            const rollbackMetrics = applyOptimisticMetricUpdate(this, itemsToUpdate, updates);
+            
             for (let i = 0; i < this.dataArray.length; i++) {
                 const item = this.dataArray[i];
                 if (this.filterFn(item)) {
@@ -801,6 +830,11 @@ export class LiveQuerySet {
             }
             catch (error) {
                 this._notifyError(error, 'update');
+                
+                // Roll back metric updates
+                rollbackMetrics();
+                
+                // Roll back data array changes
                 for (const i of affectedIndexes) {
                     const originalItem = originals.get(i);
                     if (originalItem) {

@@ -11,12 +11,14 @@ import {
   ConfigError 
 } from '../../src/flavours/django/errors';
 import { ResultTuple } from '../../src/flavours/django/manager';
+import { liveQueryRegistry } from '../../src/core/liveView';
 
 describe('updateOrCreate() Method Tests', () => {
   let relatedInstance: any;
   let originalConfig: any;
 
   beforeAll(async () => {
+    liveQueryRegistry.namespaceRegistry = new Map();
     loadConfigFromFile();
     originalConfig = {
       getAuthHeaders: () => ({
