@@ -304,7 +304,7 @@ it('should optimistically update count metric on filtered delete', async () => {
   
   // Complete the operation
   await deletePromise;
-  await delay(100);
+  await delay(300);
   
   // Verify final state
   expect(filteredCountMetric.value).toBe(0);

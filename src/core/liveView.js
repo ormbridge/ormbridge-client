@@ -238,15 +238,9 @@ export const handleModelEvent = async (event) => {
         if (event.model && lqs.ModelClass && lqs.ModelClass.modelName !== event.model) {
             continue;
         }
-        const shouldRefreshMetrics = 
-            activeOperationIds.size === 0 || 
-            (activeOperationIds.size === 1 && event.operationId && activeOperationIds.has(event.operationId));
-
-        if (shouldRefreshMetrics) {
-            lqs.refreshMetrics().catch(error => {
-                console.error('Error refreshing metrics:', error);
-            });
-        }
+        lqs.refreshMetrics().catch(error => {
+            console.error('Error refreshing metrics:', error);
+        });
         if (event.operationId && activeOperationIds.has(event.operationId)) {
             continue;
         }
@@ -869,48 +863,53 @@ export class LiveQuerySet {
             return;
         }
         
-        // Clear any existing debounce timer (for cleanup)
+        // Clear any existing debounce timer
         if (this._metricsDebounceTimer) {
             clearTimeout(this._metricsDebounceTimer);
-            this._metricsDebounceTimer = null;
         }
         
-        // Immediately refresh metrics without debouncing
-        const refreshPromises = [];
-        for (const [key, metric] of this.activeMetrics.entries()) {
-            const [type, field] = key.split(':');
-            const refreshPromise = (async () => {
-                try {
-                    let newValue;
-                    const oldValue = metric.value;
-                    switch (type) {
-                        case 'count':
-                            newValue = await this.qs.count(field || undefined);
-                            break;
-                        case 'sum':
-                            newValue = await this.qs.sum(field);
-                            break;
-                        case 'avg':
-                            newValue = await this.qs.avg(field);
-                            break;
-                        case 'min':
-                            newValue = await this.qs.min(field);
-                            break;
-                        case 'max':
-                            newValue = await this.qs.max(field);
-                            break;
-                    }
-                    if (newValue !== undefined) {
-                        metric.value = newValue;
-                    }
+        // Set a new debounce timer
+        return new Promise(resolve => {
+            this._metricsDebounceTimer = setTimeout(async () => {
+                const refreshPromises = [];
+                for (const [key, metric] of this.activeMetrics.entries()) {
+                    const [type, field] = key.split(':');
+                    const refreshPromise = (async () => {
+                        try {
+                            let newValue;
+                            const oldValue = metric.value;
+                            switch (type) {
+                                case 'count':
+                                    newValue = await this.qs.count(field || undefined);
+                                    break;
+                                case 'sum':
+                                    newValue = await this.qs.sum(field);
+                                    break;
+                                case 'avg':
+                                    newValue = await this.qs.avg(field);
+                                    break;
+                                case 'min':
+                                    newValue = await this.qs.min(field);
+                                    break;
+                                case 'max':
+                                    newValue = await this.qs.max(field);
+                                    break;
+                            }
+                            if (newValue !== undefined) {
+                                metric.value = newValue;
+                            }
+                        }
+                        catch (error) {
+                            console.error(`Error refreshing metric ${key}:`, error);
+                        }
+                    })();
+                    refreshPromises.push(refreshPromise);
                 }
-                catch (error) {
-                    console.error(`Error refreshing metric ${key}:`, error);
-                }
-            })();
-            refreshPromises.push(refreshPromise);
-        }
-        return Promise.all(refreshPromises);
+                await Promise.all(refreshPromises);
+                this._metricsDebounceTimer = null;
+                resolve();
+            }, 100); // 100ms debounce time for more responsiveness
+        });
     }
 
     /**
