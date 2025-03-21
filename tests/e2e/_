@@ -269,45 +269,52 @@ describe('Optimistic Metrics Tests', () => {
     expect(reactiveArray.length).toBe(0);
   });
   
-it('should optimistically update count metric on filtered delete', async () => {
-  // Create initial data
-  const filterA = await DummyModel.objects.create({ name: 'FilterA', value: 10, related: relatedInstance.id });
-  const filterB = await DummyModel.objects.create({ name: 'FilterB', value: 20, related: relatedInstance.id });
-  await delay(100);
-  
-  // Set up a liveQuerySet
-  const reactiveArray = [];
-  const liveQs = await liveView(DummyModel.objects.all(), reactiveArray);
-  await delay(100);
-  
-  // Get the parent count metric
-  const parentCountMetric = await liveQs.count();
-  await delay(100);
-  
-  expect(parentCountMetric.value).toBe(2);
-  
-  // Create a filtered queryset for B specifically
-  const filteredQs = liveQs.filter({ id: filterB.id });
-  
-  // Get the filtered count metric
-  const filteredCountMetric = await filteredQs.count();
-  await delay(100);
-  
-  expect(filteredCountMetric.value).toBe(1); // Just filterB
-  
-  // Start delete operation but DON'T await it yet to check optimistic updates
-  const deletePromise = filteredQs.delete();
-  
-  // Check that counts are optimistically updated immediately
-  expect(filteredCountMetric.value).toBe(0); // Filtered item deleted optimistically
-  expect(parentCountMetric.value).toBe(1);   // Only filterA remains optimistically
-  
-  // Complete the operation
-  await deletePromise;
-  await delay(300);
-  
-  // Verify final state
-  expect(filteredCountMetric.value).toBe(0);
-  expect(parentCountMetric.value).toBe(1);
-});
+  // Test for filtered delete count metric with optimistic update check
+  it('should optimistically update count metric on filtered delete', async () => {
+    // Create initial data
+    await DummyModel.objects.create({ name: 'FilterA', value: 10, related: relatedInstance.id });
+    await delay(100);
+    await DummyModel.objects.create({ name: 'FilterB', value: 20, related: relatedInstance.id });
+    await delay(100);
+    await DummyModel.objects.create({ name: 'FilterC', value: 30, related: relatedInstance.id });
+    await delay(100);
+    
+    // Set up a liveQuerySet
+    const reactiveArray = [];
+    const liveQs = await liveView(DummyModel.objects.all().filter({ name__startswith: 'Filter' }), reactiveArray);
+    await delay(100);
+    
+    // Verify initial state
+    expect(reactiveArray.length).toBe(3);
+    
+    // Get the parent count metric
+    const parentCountMetric = await liveQs.count();
+    await delay(100);
+    
+    expect(parentCountMetric.value).toBe(3);
+    
+    // Create a filtered queryset (only items with value >= 20)
+    const filteredQs = liveQs.filter({ value__gte: 20 });
+    
+    // Get the filtered count metric
+    const filteredCountMetric = await filteredQs.count();
+    await delay(100);
+    
+    expect(filteredCountMetric.value).toBe(2); // FilterB and FilterC
+    
+    // Start delete operation but DON'T await it yet to check optimistic updates
+    const deletePromise = filteredQs.delete();
+    
+    // Check that counts are optimistically updated immediately
+    expect(filteredCountMetric.value).toBe(0); // All filtered items deleted optimistically
+    expect(parentCountMetric.value).toBe(1);   // Only FilterA remains optimistically
+    
+    // Complete the operation
+    await deletePromise;
+    await delay(200);
+    
+    // Verify final state
+    expect(filteredCountMetric.value).toBe(0);
+    expect(parentCountMetric.value).toBe(1);
+  });
 });

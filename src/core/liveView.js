@@ -627,12 +627,6 @@ export class LiveQuerySet {
      * @returns {LiveQuerySet} A new LiveQuerySet instance with relayed events.
      */
     filter(conditions) {
-        // Check for unsupported Django-style operators
-        for (const key of Object.keys(conditions)) {
-            if (key.includes('__')) {
-                throw new Error(`Live queryset filtering only supports filtering on top level field equalities i.e id: 3. Provided filter ${key} is not valid`);
-            }
-        }
         // Build a filter function based solely on the new conditions.
         const newFilter = (item) => {
             return Object.entries(conditions).every(([key, value]) => {
@@ -744,7 +738,7 @@ export class LiveQuerySet {
                 const deletedIndexes = [];
                 
                 // Get a copy of items that will be deleted for metric calculations
-                const itemsToDelete = [...this.dataArray.filter(this.filterFn)];      
+                const itemsToDelete = [...this.dataArray.filter(this.filterFn)];
                 
                 // Apply optimistic metric updates before modifying the array
                 const rollbackMetrics = applyOptimisticMetricDelete(this, itemsToDelete);
@@ -968,8 +962,6 @@ export class LiveQuerySet {
         if (!items || items.length === 0) {
             return;
         }
-
-        const filteredItems = items.filter(this.filterFn);
         
         handleItemInsertion(
             this.dataArray,
