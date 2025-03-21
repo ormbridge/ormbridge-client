@@ -4,14 +4,12 @@ import { DummyRelatedModel } from '../../models/backend1/django_app/dummyrelated
 import { setBackendConfig } from '../../src/config';
 import { ValidationError, DoesNotExist } from '../../src/flavours/django/errors';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader'
-import { liveQueryRegistry } from '../../src/core/liveView';
 
 describe('update() Method Tests (Revised)', () => {
   let relatedInstance: any;
   let originalConfig: any;
 
   beforeAll(async () => {
-    liveQueryRegistry.namespaceRegistry = new Map();
     loadConfigFromFile();
     originalConfig = {
       getAuthHeaders: () => ({
