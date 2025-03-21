@@ -8,7 +8,6 @@ import { EventType, getEventReceiver, setEventReceiver, setNamespaceResolver,
  } from './eventReceivers.js';
 import { initializeEventReceiver } from '../config.js';
 import { MultipleObjectsReturned, DoesNotExist } from "../flavours/django/errors.js";
-import { OptimisticMetricsHandler } from "./optimisticMetrics.js";
 
 /**
  * Updates an array in place to match the target array with minimal operations
@@ -420,7 +419,6 @@ export class LiveQuerySet {
         this.activeMetrics = new Map();
         this.callbacks = [];
         this.errorCallbacks = [];
-        this.optimisticMetricsHandler = new OptimisticMetricsHandler(this);
     }
 
     /**
@@ -661,7 +659,7 @@ export class LiveQuerySet {
     }
 
     /**
-     * Deletes items matching the filter with optimistic metrics updates
+     * Deletes items matching the filter.
      * @returns {Promise<void>}
      */
     async delete() {
@@ -683,17 +681,11 @@ export class LiveQuerySet {
                         this.dataArray.splice(i, 1);
                     }
                 }
-                
                 this._notify('delete');
-                
                 // If nothing was deleted, we're done
                 if (deletedItems.length === 0) {
                     return;
                 }
-                
-                // Update metrics optimistically and store original values
-                // Pass the entire array of deleted items at once
-                const originalMetricValues = this.optimisticMetricsHandler.updateAllMetrics('delete', deletedItems);
                 
                 try {
                     // Execute delete operation on the server
@@ -705,7 +697,6 @@ export class LiveQuerySet {
                 } catch (error) {
                     // Rollback: restore deleted items to their original positions
                     this._notifyError(error, 'delete');
-                    
                     for (let i = 0; i < deletedItems.length; i++) {
                         const index = deletedIndexes[i];
                         // If index is beyond current array length, simply push to end
@@ -715,12 +706,8 @@ export class LiveQuerySet {
                             // Otherwise, insert at original position
                             this.dataArray.splice(index, 0, deletedItems[i]);
                         }
+                        this._notify('create'); // Notify about the restored item
                     }
-                    
-                    this._notify('create'); // Notify about the restored items
-                    
-                    // Rollback metrics with the array of items
-                    this.optimisticMetricsHandler.rollbackMetricUpdates('delete', deletedItems, null, originalMetricValues);
                     
                     // Re-throw to be caught by the outer try/catch
                     throw error;
@@ -733,7 +720,7 @@ export class LiveQuerySet {
     }
 
     /**
-     * Creates a new item with optimistic metrics updates
+     * Creates a new item.
      * @param {Object} item - The item data.
      * @returns {Promise<Object>} The created item.
      */
@@ -755,9 +742,6 @@ export class LiveQuerySet {
                 this._notify.bind(this)
             );
             
-            // Optimistically update metrics and store original values
-            const originalMetricValues = this.optimisticMetricsHandler.updateAllMetrics('create', optimisticItem);
-            
             try {
                 const result = await this.qs.executeQuery({
                     type: 'create',
@@ -778,13 +762,8 @@ export class LiveQuerySet {
                 this._notifyError(error, 'create');
                 const tempIndex = this.dataArray.findIndex(x => x.id === tempId);
                 if (tempIndex !== -1) {
-                    // Get the item before removing it for metrics rollback
-                    const deletedItem = this.dataArray[tempIndex];
                     this.dataArray.splice(tempIndex, 1);
                     this._notify('delete');
-                    
-                    // Rollback metrics
-                    this.optimisticMetricsHandler.rollbackMetricUpdates('create', deletedItem, null, originalMetricValues);
                 }
                 throw error;
             }
@@ -792,7 +771,7 @@ export class LiveQuerySet {
     }
 
     /**
-     * Updates items matching the filter with optimistic metrics updates
+     * Updates items matching the filter.
      * @param {Object} updates - Update data.
      * @returns {Promise<Array>} The updated items.
      */
@@ -801,70 +780,37 @@ export class LiveQuerySet {
             throw new Error('Update accepts only accepts an object of the updates to apply. Use filter() before calling update() to select elements.');
         }
         return await withOperationId(async (operationId) => {
-            const affectedItems = [];
-            const originals = [];
-            
-            // Store affected items and their originals
+            const affectedIndexes = [];
+            const originals = new Map();
             for (let i = 0; i < this.dataArray.length; i++) {
                 const item = this.dataArray[i];
                 if (this.filterFn(item)) {
-                    const original = Object.assign({}, item);
-                    originals.push(original);
-                    
-                    // Apply updates
-                    Object.assign(item, updates);
-                    affectedItems.push(item);
+                    affectedIndexes.push(i);
+                    originals.set(i, Object.assign({}, item));
+                    Object.assign(this.dataArray[i], updates);
                 }
             }
-            
-            // Notify of update
             this._notify('update');
-            
-            // Update metrics optimistically
-            if (affectedItems.length > 0) {
-                // Pass arrays directly to the metrics handler
-                const originalMetricValues = this.optimisticMetricsHandler.updateAllMetrics('update', originals, affectedItems);
-                
-                try {
-                    await this.qs.executeQuery(Object.assign({}, this.qs.build(), {
-                        type: 'update',
-                        data: updates,
-                        operationId,
-                        namespace: this.namespace
-                    }));
-                    return this.dataArray.filter(this.filterFn);
-                }
-                catch (error) {
-                    this._notifyError(error, 'update');
-                    
-                    // Rollback data changes
-                    for (let i = 0; i < this.dataArray.length; i++) {
-                        const originalIndex = originals.findIndex(
-                            o => o[this.ModelClass.primaryKeyField] === this.dataArray[i][this.ModelClass.primaryKeyField]
-                        );
-                        
-                        if (originalIndex !== -1) {
-                            this.dataArray[i] = originals[originalIndex];
-                        }
-                    }
-                    
-                    this._notify('update');
-                    
-                    // Rollback metrics with arrays
-                    this.optimisticMetricsHandler.rollbackMetricUpdates('update', originals, affectedItems, originalMetricValues);
-                    
-                    throw error;
-                }
-            } else {
-                // If no items were affected, just execute the query without optimistic updates
+            try {
                 await this.qs.executeQuery(Object.assign({}, this.qs.build(), {
                     type: 'update',
                     data: updates,
                     operationId,
                     namespace: this.namespace
                 }));
-                return this.dataArray.filter(this.filterFn);
             }
+            catch (error) {
+                this._notifyError(error, 'update');
+                for (const i of affectedIndexes) {
+                    const originalItem = originals.get(i);
+                    if (originalItem) {
+                        this.dataArray[i] = originalItem;
+                        this._notify('update');
+                    }
+                }
+                throw error;
+            }
+            return this.dataArray.filter(this.filterFn);
         });
     }
 
