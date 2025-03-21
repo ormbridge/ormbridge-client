@@ -823,53 +823,48 @@ export class LiveQuerySet {
             return;
         }
         
-        // Clear any existing debounce timer
+        // Clear any existing debounce timer (for cleanup)
         if (this._metricsDebounceTimer) {
             clearTimeout(this._metricsDebounceTimer);
+            this._metricsDebounceTimer = null;
         }
         
-        // Set a new debounce timer
-        return new Promise(resolve => {
-            this._metricsDebounceTimer = setTimeout(async () => {
-                const refreshPromises = [];
-                for (const [key, metric] of this.activeMetrics.entries()) {
-                    const [type, field] = key.split(':');
-                    const refreshPromise = (async () => {
-                        try {
-                            let newValue;
-                            const oldValue = metric.value;
-                            switch (type) {
-                                case 'count':
-                                    newValue = await this.qs.count(field || undefined);
-                                    break;
-                                case 'sum':
-                                    newValue = await this.qs.sum(field);
-                                    break;
-                                case 'avg':
-                                    newValue = await this.qs.avg(field);
-                                    break;
-                                case 'min':
-                                    newValue = await this.qs.min(field);
-                                    break;
-                                case 'max':
-                                    newValue = await this.qs.max(field);
-                                    break;
-                            }
-                            if (newValue !== undefined) {
-                                metric.value = newValue;
-                            }
-                        }
-                        catch (error) {
-                            console.error(`Error refreshing metric ${key}:`, error);
-                        }
-                    })();
-                    refreshPromises.push(refreshPromise);
+        // Immediately refresh metrics without debouncing
+        const refreshPromises = [];
+        for (const [key, metric] of this.activeMetrics.entries()) {
+            const [type, field] = key.split(':');
+            const refreshPromise = (async () => {
+                try {
+                    let newValue;
+                    const oldValue = metric.value;
+                    switch (type) {
+                        case 'count':
+                            newValue = await this.qs.count(field || undefined);
+                            break;
+                        case 'sum':
+                            newValue = await this.qs.sum(field);
+                            break;
+                        case 'avg':
+                            newValue = await this.qs.avg(field);
+                            break;
+                        case 'min':
+                            newValue = await this.qs.min(field);
+                            break;
+                        case 'max':
+                            newValue = await this.qs.max(field);
+                            break;
+                    }
+                    if (newValue !== undefined) {
+                        metric.value = newValue;
+                    }
                 }
-                await Promise.all(refreshPromises);
-                this._metricsDebounceTimer = null;
-                resolve();
-            }, 100); // 100ms debounce time for more responsiveness
-        });
+                catch (error) {
+                    console.error(`Error refreshing metric ${key}:`, error);
+                }
+            })();
+            refreshPromises.push(refreshPromise);
+        }
+        return Promise.all(refreshPromises);
     }
 
     /**
@@ -928,7 +923,13 @@ export class LiveQuerySet {
         if (!items || items.length === 0) {
             return;
         }
+        // Filter items that match the filter function
+        const filteredItems = items.filter(this.filterFn);
         
+        if (filteredItems.length === 0) {
+            return; // No items match the filter
+        }
+            
         handleItemInsertion(
             this.dataArray,
             filteredItems,
