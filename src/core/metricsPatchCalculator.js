@@ -9,40 +9,20 @@ class CountPatchCalculator {
    * @param {number} metricValue - Current metric value
    * @returns {number} The new metric value
    */
-  static calculate(field, eventType, updatedData, originalData, metricValue) {
-    // Log detailed information about the inputs
-    console.log('CountPatchCalculator called with:', {
-      field,
-      eventType,
-      updatedDataLength: updatedData.length,
-      updatedDataItems: updatedData.map(item => typeof item === 'object' ? item.id : item),
-      originalDataLength: originalData.length,
-      originalDataItems: originalData.map(item => typeof item === 'object' ? item.id : item),
-      currentMetricValue: metricValue
-    });
-    
-    // Existing logic
-    console.log("patches", updatedData);
+  static calculate(field, eventType, updatedData, originalData, metricValue) {    
     if (eventType === 'create') {
       const newValue = metricValue + (updatedData.length - originalData.length);
-      console.log(`Create event: ${metricValue} + (${updatedData.length} - ${originalData.length}) = ${newValue}`);
       return newValue;
     }
-    
     if (eventType === 'delete') {
       const newValue = metricValue - (originalData.length - updatedData.length);
-      console.log(`Delete event: ${metricValue} - (${originalData.length} - ${updatedData.length}) = ${newValue}`);
       return newValue;
     }
-    
-    // For updates, log and return unchanged
-    console.log(`Update event: metric value remains ${metricValue}`);
     return metricValue;
   }
 }
 
 export default CountPatchCalculator;
-
 
   export const calculators = {
     "count": CountPatchCalculator

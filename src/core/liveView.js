@@ -832,7 +832,7 @@ async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.prima
             const updatedInstance = updatedMap.get(pkValue);
             
             if (updatedInstance) {
-              Object.assign(draft[i], updatedInstance);
+              draft[i] = updatedInstance;
               notFoundPKs.delete(pkValue);
             }
           }
