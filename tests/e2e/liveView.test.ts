@@ -1150,4 +1150,72 @@ describe('LiveView E2E Tests', () => {
     liveQs.destroy();
     await wait(200);
   });
+
+  it('should optimistically update count metric on data changes', async () => {
+    // First, ensure a clean slate
+    await DummyModel.objects.all().delete();
+    await wait(500);
+    
+    // Create initial test data
+    await DummyModel.objects.create({ name: 'Item 1', value: 10 });
+    await DummyModel.objects.create({ name: 'Item 2', value: 20 });
+    await wait(200);
+    
+    // Create LiveQuerySet with the new options format
+    const liveQs = await liveView(
+      DummyModel.objects.all(),
+      {
+        serializer: { limit: 10, offset: 0 }
+      }
+    );
+    
+    // Verify initial data count
+    let items = await liveQs.fetch();
+    expect(items.length).toBe(2);
+    
+    // Get initial count metric
+    const count = await liveQs.count();
+    
+    // Verify initial value
+    expect(count.value).toBe(2);
+    
+    // Set up a change listener to know when the optimistic update happens
+    let changeDetected = false;
+    const unsubscribe = liveQs.subscribe((eventType) => {
+      changeDetected = true;
+    });
+    
+    // Perform a local create operation
+    await liveQs.create({ name: 'Item 3', value: 30 });
+    
+    // Verify that a change event was fired
+    expect(changeDetected).toBe(true);
+    
+    // Check that count was optimistically updated immediately
+    expect(count.value).toBe(3, 'Count should optimistically update immediately after create');
+    
+    // Reset change flag
+    changeDetected = false;
+    
+    // Perform a local delete operation
+    await liveQs.filter({ name: 'Item 1' }).delete();
+    
+    // Verify another change event fired
+    expect(changeDetected).toBe(true);
+    
+    // Check that count was optimistically updated again
+    expect(count.value).toBe(2, 'Count should optimistically update immediately after delete');
+    
+    // Now perform an update (which shouldn't change count)
+    changeDetected = false;
+    await liveQs.filter({ name: 'Item 2' }).update({ value: 25 });
+    
+    // Verify that count remains the same after an update
+    expect(count.value).toBe(2, 'Count should not change after update operation');
+    
+    // Clean up
+    unsubscribe();
+    liveQs.destroy();
+    await wait(500);
+  });
 });

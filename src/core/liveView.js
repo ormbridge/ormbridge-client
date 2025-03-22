@@ -209,12 +209,20 @@ export const handleModelEvent = async (event) => {
         if (event.model && lqs.ModelClass && lqs.ModelClass.modelName !== event.model) {
             continue;
         }
-        lqs.refreshMetrics().catch(error => {
+
+        // If there's no operation, assign one for metric update deduping
+        if (!event.operationId) {
+            event.operationId = generateOperationId();
+        }
+        
+        lqs.refreshMetrics(event.operationId).catch(error => {
             console.error('Error refreshing metrics:', error);
         });
+        
         if (event.operationId && activeOperationIds.has(event.operationId)) {
             continue;
         }
+        
         const pkField = lqs.ModelClass.primaryKeyField;
         const isBulkEvent = normalizedEventType === EventType.BULK_UPDATE ||
             normalizedEventType === EventType.BULK_DELETE;
@@ -346,7 +354,6 @@ export class LiveQuerySet {
 
     handleOptimisticMetricUpdates(eventType, updatedArray, originalArray, operationId) {
         // Calculate optimistic updates
-        console.log("handleOptimisticMetricUpdate called", eventType, updatedArray, originalArray)
         const metricUpdates = MetricsManager.optimisticUpdate(
             eventType,
             updatedArray,
@@ -355,8 +362,6 @@ export class LiveQuerySet {
             operationId
         );
 
-        console.log("metric updates:", metricUpdates)
-        
         // Apply the updates if there are any
         if (Object.keys(metricUpdates).length > 0) {
             this.applyOptimisticMetrics(metricUpdates, operationId);
@@ -365,24 +370,16 @@ export class LiveQuerySet {
 
     applyOptimisticMetrics(metricUpdates, operationId) {
         // Skip if this operation has already been processed
-        console.log("Apply metrics called", metricUpdates, operationId)
         if (operationId && this.optimisticMetricsApplied.has(operationId)) {
             return;
         }
         
         // Apply updates to this instance
         MetricsManager.applyOptimisticUpdates(metricUpdates, this.activeMetrics);
-
-        console.log("metrics after update", this.activeMetrics)
         
         // Mark this operation as processed
         if (operationId) {
             this.optimisticMetricsApplied.add(operationId);
-        }
-        
-        // Propagate to parent if exists
-        if (this.parent) {
-            this.parent.applyOptimisticMetrics(metricUpdates, operationId);
         }
     }
 
@@ -483,14 +480,17 @@ export class LiveQuerySet {
     /**
      * Notify all callbacks about a data change event
      * @param {string} eventType - Type of event ('create', 'update', or 'delete')
-     * @returns {void} - No longer returns a promise
+     * @param {Array} updatedArray - The updated data array
+     * @param {Array} originalArray - The original data array
+     * @param {string} operationId - The operation ID
+     * @param {boolean} isPropagated - Whether this notification is propagated from a child
+     * @returns {void}
      */
-    _notify(eventType, updatedArray, originalArray, operationId) {
+    _notify(eventType, updatedArray, originalArray, operationId, isPropagated = false) {
         // Call all callbacks immediately without waiting for refresh to complete
         for (const callback of this.callbacks) {
             callback(eventType, updatedArray, originalArray, operationId);
         }
-        // Optimistically update the metrics
         this.handleOptimisticMetricUpdates(eventType, updatedArray, originalArray, operationId);
     }
 
@@ -570,18 +570,19 @@ export class LiveQuerySet {
             this.options, 
             newFilter, 
             conditions,
-            this.createMetricFn
+            this.createMetricFn,
+            this
         );
         
         // Store reference to the original LiveQuerySet
         const originalLiveQs = this;
         
         // Subscribe to the filtered instance's notifications and relay them to the original
-        filteredLiveQs.subscribe(eventType => {
-            // Directly call the original's _notify method
-            originalLiveQs._notify(eventType);
+        filteredLiveQs.subscribe((eventType, updatedArray, originalArray, operationId) => {
+            // Pass all parameters when relaying events, and mark as propagated
+            originalLiveQs._notify(eventType, updatedArray, originalArray, operationId, true);
         });
-        
+                
         // Also relay error events
         filteredLiveQs.onError((error, operation) => {
             // Directly call the original's _notifyError method
@@ -660,7 +661,7 @@ export class LiveQuerySet {
             
             // Use operations manager to insert the optimistic item
             this.operationsManager.insert(
-                operationId, 
+                operationId,
                 optimisticItem, 
                 {
                     position: this.insertBehavior.local,
@@ -1005,7 +1006,7 @@ async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.prima
      * @returns {Promise<void>}
      */
     async refreshMetrics() {
-        return MetricsManager.refreshMetrics(this.qs, this.activeMetrics);
+        return MetricsManager.scheduleRefresh(this.qs, this.activeMetrics);
     }
 
     /**

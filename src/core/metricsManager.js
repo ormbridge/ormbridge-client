@@ -1,5 +1,7 @@
-// Import the calculators
+// modelsync-client/src/core/metricsManager.js
+// Import the calculators and coordinator
 import { calculators } from './metricsPatchCalculator';
+import { metricsCoordinator } from './metricsCoordinator';
 
 /**
  * Manages metrics calculations for a query set.
@@ -17,42 +19,48 @@ class MetricsManager {
             return;
         }
         
-        // Immediately refresh metrics without debouncing
-        const refreshPromises = [];
-        for (const [key, metric] of activeMetrics.entries()) {
-            const [type, field] = key.split(':');
-            const refreshPromise = (async () => {
-                try {
-                    let newValue;
-                    const oldValue = metric.value;
-                    switch (type) {
-                        case 'count':
-                            newValue = await qs.count(field || undefined);
-                            break;
-                        case 'sum':
-                            newValue = await qs.sum(field);
-                            break;
-                        case 'avg':
-                            newValue = await qs.avg(field);
-                            break;
-                        case 'min':
-                            newValue = await qs.min(field);
-                            break;
-                        case 'max':
-                            newValue = await qs.max(field);
-                            break;
+        try {
+            // Immediately refresh metrics without debouncing
+            const refreshPromises = [];
+            for (const [key, metric] of activeMetrics.entries()) {
+                const [type, field] = key.split(':');
+                const refreshPromise = (async () => {
+                    try {
+                        let newValue;
+                        const oldValue = metric.value;
+                        switch (type) {
+                            case 'count':
+                                newValue = await qs.count(field || undefined);
+                                break;
+                            case 'sum':
+                                newValue = await qs.sum(field);
+                                break;
+                            case 'avg':
+                                newValue = await qs.avg(field);
+                                break;
+                            case 'min':
+                                newValue = await qs.min(field);
+                                break;
+                            case 'max':
+                                newValue = await qs.max(field);
+                                break;
+                        }
+                        if (newValue !== undefined) {
+                            metric.value = newValue;
+                        }
                     }
-                    if (newValue !== undefined) {
-                        metric.value = newValue;
+                    catch (error) {
+                        console.error(`Error refreshing metric ${key}:`, error);
                     }
-                }
-                catch (error) {
-                    console.error(`Error refreshing metric ${key}:`, error);
-                }
-            })();
-            refreshPromises.push(refreshPromise);
+                })();
+                refreshPromises.push(refreshPromise);
+            }
+            return Promise.all(refreshPromises);
         }
-        return Promise.all(refreshPromises);
+        catch (error) {
+            console.error("Error refreshing metrics:", error);
+            throw error;
+        }
     }
 
     /**
@@ -153,11 +161,18 @@ class MetricsManager {
      * @param {Array} updatedState - The array after it was updated
      * @param {Array} originalState - The original data state before patches
      * @param {Map} activeMetrics - The active metrics map
+     * @param {String} operationId - Operation id that is shared between the frontend and backend
      * @returns {Object} Object with metricKey -> newValue mapping that can be applied later
-     * @returns {String} Operation id that is shared between the frontend and backend
      */
     static optimisticUpdate(eventType, updatedState, originalState, activeMetrics, operationId) {
-      
+        // Skip optimistic updates if a refresh is in progress
+        if (metricsCoordinator.isRefreshing()) {
+            return {};
+        }
+        
+        // Note that we had an update
+        metricsCoordinator.touch();
+        
         const metricUpdates = {};
 
         // Iterate through all active metrics
@@ -199,12 +214,32 @@ class MetricsManager {
      * @param {Map} activeMetrics - The active metrics map
      */
     static applyOptimisticUpdates(metricUpdates, activeMetrics) {
+        // Skip if refresh is in progress
+        if (metricsCoordinator.isRefreshing()) {
+            return;
+        }
+        
         for (const [metricKey, newValue] of Object.entries(metricUpdates)) {
             const metric = activeMetrics.get(metricKey);
             if (metric) {
                 metric.value = newValue;
             }
         }
+    }
+    
+    /**
+     * Schedule a refresh of metrics after a sequence of operations
+     * 
+     * @param {Object} qs - The query set to run metrics on
+     * @param {Map} activeMetrics - The active metrics map
+     * @returns {Promise<void>}
+     */
+    static scheduleRefresh(qs, activeMetrics) {
+        if (activeMetrics.size === 0) {
+            return Promise.resolve();
+        }
+        
+        return metricsCoordinator.scheduleRefresh(() => this.refreshMetrics(qs, activeMetrics));
     }
 }
 
