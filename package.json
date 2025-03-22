@@ -78,6 +78,7 @@
     "handlebars": "^4.7.8",
     "inquirer": "^12.4.2",
     "lodash-es": "^4.17.21",
+    "mutative": "^1.1.0",
     "openapi-typescript": "^6.7.1",
     "pusher-js": "^8.4.0",
     "uuid": "^11.1.0",
