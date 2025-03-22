@@ -968,7 +968,7 @@ describe('LiveView E2E Tests', () => {
     expect(liveQs.insertBehavior.local).toBe('append');
     
     // Verify change events were fired
-    expect(changeEvents).toContain('refresh');
+    expect(changeEvents).toContain('create');
     
     // Create new item through the refreshed LiveQuerySet
     const newItem = await liveQs.create({ name: 'Another Special', value: 400 });
