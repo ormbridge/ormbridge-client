@@ -237,32 +237,32 @@ export const handleModelEvent = async (event) => {
                     {
                         const pkValue = event[pkField];
                         const createModel = await lqs.qs.get({ [pkField]: pkValue });
-                        lqs.handleExternalCreateEvent(createModel);
+                        lqs.handleExternalCreateEvent(createModel, event.operationId);
                     }
                     break;
                 case EventType.UPDATE:
                     {
                         const updatePkValue = event[pkField];
                         const updateModel = await lqs.qs.get({ [pkField]: updatePkValue });
-                        lqs.handleExternalUpdateEvent(updateModel);
+                        lqs.handleExternalUpdateEvent(updateModel, event.operationId);
                     }
                     break;
                 case EventType.DELETE:
                     {
                         const deletePkValue = event[pkField];
-                        lqs.handleExternalDeleteEvent(deletePkValue);
+                        lqs.handleExternalDeleteEvent(deletePkValue, event.operationId);
                     }
                     break;
                 case EventType.BULK_UPDATE:
                     {
                         const updatePkFieldName = event.pk_field_name || pkField;
-                        await lqs.handleExternalBulkUpdateEvent(event.instances || [], updatePkFieldName);
+                        await lqs.handleExternalBulkUpdateEvent(event.instances || [], updatePkFieldName, event.operationId);
                     }
                     break;
                 case EventType.BULK_DELETE:
                     {
                         const deletePkFieldName = event.pk_field_name || pkField;
-                        lqs.handleExternalBulkDeleteEvent(event.instances || [], deletePkFieldName);
+                        lqs.handleExternalBulkDeleteEvent(event.instances || [], deletePkFieldName, event.operationId);
                     }
                     break;
             }
@@ -306,6 +306,7 @@ export class LiveQuerySet {
         this.ModelClass = this.qs.ModelClass;
         this.createMetricFn = createMetricFn ? createMetricFn : (value) => ({ value });
         this.parent = parent;
+        this.optimisticMetricsApplied = new Set();
         
         // Initialize insertion behavior with defaults
         this.insertBehavior = {
@@ -338,8 +339,51 @@ export class LiveQuerySet {
         // Initialize the OperationsManager
         this.operationsManager = new OperationsManager(
             this.dataArray, 
-            this._notify.bind(this)
+            this._notify.bind(this),
+            this.ModelClass
         );
+    }
+
+    handleOptimisticMetricUpdates(eventType, updatedArray, originalArray, operationId) {
+        // Calculate optimistic updates
+        console.log("handleOptimisticMetricUpdate called", eventType, updatedArray, originalArray)
+        const metricUpdates = MetricsManager.optimisticUpdate(
+            eventType,
+            updatedArray,
+            originalArray,
+            this.activeMetrics,
+            operationId
+        );
+
+        console.log("metric updates:", metricUpdates)
+        
+        // Apply the updates if there are any
+        if (Object.keys(metricUpdates).length > 0) {
+            this.applyOptimisticMetrics(metricUpdates, operationId);
+        }
+    }
+
+    applyOptimisticMetrics(metricUpdates, operationId) {
+        // Skip if this operation has already been processed
+        console.log("Apply metrics called", metricUpdates, operationId)
+        if (operationId && this.optimisticMetricsApplied.has(operationId)) {
+            return;
+        }
+        
+        // Apply updates to this instance
+        MetricsManager.applyOptimisticUpdates(metricUpdates, this.activeMetrics);
+
+        console.log("metrics after update", this.activeMetrics)
+        
+        // Mark this operation as processed
+        if (operationId) {
+            this.optimisticMetricsApplied.add(operationId);
+        }
+        
+        // Propagate to parent if exists
+        if (this.parent) {
+            this.parent.applyOptimisticMetrics(metricUpdates, operationId);
+        }
     }
 
     /**
@@ -441,11 +485,13 @@ export class LiveQuerySet {
      * @param {string} eventType - Type of event ('create', 'update', or 'delete')
      * @returns {void} - No longer returns a promise
      */
-    _notify(eventType) {
+    _notify(eventType, updatedArray, originalArray, operationId) {
         // Call all callbacks immediately without waiting for refresh to complete
         for (const callback of this.callbacks) {
-            callback(eventType);
+            callback(eventType, updatedArray, originalArray, operationId);
         }
+        // Optimistically update the metrics
+        this.handleOptimisticMetricUpdates(eventType, updatedArray, originalArray, operationId);
     }
 
     /**
@@ -610,8 +656,7 @@ export class LiveQuerySet {
      */
     async create(item) {
         return await withOperationId(async (operationId) => {
-            const tempId = `temp_${Date.now()}`;
-            const optimisticItem = Object.assign({}, item, { id: tempId });
+            const optimisticItem = Object.assign({}, item, { id: operationId });
             
             // Use operations manager to insert the optimistic item
             this.operationsManager.insert(
@@ -638,7 +683,7 @@ export class LiveQuerySet {
                 // Update the temporary item with the real one
                 const updateSuccess = this.operationsManager.update(
                     `${operationId}_update`,
-                    item => item[pkField] === tempId,
+                    item => item[pkField] === operationId,
                     createdItem
                 );
                 
@@ -756,7 +801,7 @@ async get(filters) {
  * @param {string} [pkField] - Primary key field name.
  * @returns {Promise<void>}
  */
-async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.primaryKeyField) {
+async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.primaryKeyField, operationId) {
     if (!instanceIds || instanceIds.length === 0) {
       return;
     }
@@ -772,7 +817,6 @@ async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.prima
         return;
       }
       
-      const operationId = `bulk_update_${Date.now()}`;
       const updatedMap = new Map(updatedInstances.map(instance => [instance[pkField], instance]));
       
       // Update existing items
@@ -812,7 +856,7 @@ async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.prima
      * Handles a bulk create event from the server.
      * @param {Array} items - Array of new items.
      */
-    handleExternalBulkCreateEvent(items) {
+    handleExternalBulkCreateEvent(items, operationId) {
         if (!items || items.length === 0) {
             return;
         }
@@ -823,8 +867,6 @@ async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.prima
         if (filteredItems.length === 0) {
             return; // No items match the filter
         }
-        
-        const operationId = `bulk_create_${Date.now()}`;
         
         // Use the operations manager to insert the items
         this.operationsManager.insert(
@@ -843,12 +885,11 @@ async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.prima
      * @param {Array<string|number>} instanceIds - Array of primary key values.
      * @param {string} [pkField] - Primary key field name.
      */
-    handleExternalBulkDeleteEvent(instanceIds, pkField = this.ModelClass.primaryKeyField) {
+    handleExternalBulkDeleteEvent(instanceIds, pkField = this.ModelClass.primaryKeyField, operationId) {
         if (!instanceIds || instanceIds.length === 0) {
             return;
         }
         
-        const operationId = `bulk_delete_${Date.now()}`;
         const deletedIdsSet = new Set(instanceIds);
         
         // Use the operations manager to remove items with matching IDs
@@ -862,7 +903,7 @@ async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.prima
      * Handles an external create event.
      * @param {Object} item - The created item.
      */
-    handleExternalCreateEvent(item) {
+    handleExternalCreateEvent(item, operationId) {
         // Skip if the item was created by an active operation
         if (item.operationId && activeOperationIds.has(item.operationId)) {
             return;
@@ -874,7 +915,6 @@ async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.prima
         }
         
         const pkField = this.ModelClass.primaryKeyField || 'id';
-        const operationId = `external_create_${Date.now()}`;
         
         // Check if item already exists (could be an update)
         const existingIndex = this.dataArray.findIndex(x => x[pkField] === item[pkField]);
@@ -901,13 +941,12 @@ async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.prima
      * Handles an external update event.
      * @param {Object} item - The updated item.
      */
-    handleExternalUpdateEvent(item) {
+    handleExternalUpdateEvent(item, operationId) {
         if (item.operationId && activeOperationIds.has(item.operationId)) {
             return;
         }
         
         const pkField = this.ModelClass.primaryKeyField || 'id';
-        const operationId = `external_update_${Date.now()}`;
         
         // Check if the item exists in our collection
         const index = this.dataArray.findIndex(x => x[pkField] === item[pkField]);
@@ -929,14 +968,13 @@ async handleExternalBulkUpdateEvent(instanceIds, pkField = this.ModelClass.prima
      * Handles an external delete event.
      * @param {number|string} itemId - The primary key value of the deleted item.
      */
-    handleExternalDeleteEvent(itemId) {
+    handleExternalDeleteEvent(itemId, operationId) {
         if (activeOperationIds.has(itemId)) {
             return;
         }
         
         const pkField = this.ModelClass.primaryKeyField || 'id';
-        const operationId = `external_delete_${Date.now()}`;
-        
+
         // Remove the item with the given ID
         this.operationsManager.remove(
             operationId,

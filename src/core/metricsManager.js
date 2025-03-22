@@ -1,3 +1,6 @@
+// Import the calculators
+import { calculators } from './metricsPatchCalculator';
+
 /**
  * Manages metrics calculations for a query set.
  * This class is designed to be stateless - all required references are passed as parameters to each method.
@@ -141,6 +144,67 @@ class MetricsManager {
         const value = await qs.max(field);
         const metricKey = `max:${String(field)}`;
         return this._getOrCreateMetric(activeMetrics, metricKey, value, createMetricFn);
+    }
+
+    /**
+     * Calculates optimistic updates for metrics based on patches
+     * 
+     * @param {string} eventType - Type of event ('create', 'update', or 'delete')
+     * @param {Array} updatedState - The array after it was updated
+     * @param {Array} originalState - The original data state before patches
+     * @param {Map} activeMetrics - The active metrics map
+     * @returns {Object} Object with metricKey -> newValue mapping that can be applied later
+     * @returns {String} Operation id that is shared between the frontend and backend
+     */
+    static optimisticUpdate(eventType, updatedState, originalState, activeMetrics, operationId) {
+      
+        const metricUpdates = {};
+
+        // Iterate through all active metrics
+        for (const [metricKey, metric] of activeMetrics.entries()) {
+            // Extract metric type and field
+            const [metricType, field] = metricKey.split(':');
+            
+            // Skip if we don't have a calculator for this metric type
+            if (!calculators[metricType]) {
+                continue;
+            }
+
+            // Get the calculator for this metric type
+            const calculator = calculators[metricType];
+            
+            // Calculate the new value
+            const currentValue = metric.value;
+            const newValue = calculator.calculate(
+                field || undefined,
+                eventType, 
+                updatedState, 
+                originalState, 
+                currentValue
+            );
+
+            // Add to updates if value changed
+            if (newValue !== currentValue) {
+                metricUpdates[metricKey] = newValue;
+            }
+        }
+
+        return metricUpdates;
+    }
+
+    /**
+     * Applies previously calculated optimistic updates to metrics
+     * 
+     * @param {Object} metricUpdates - Object with metricKey -> newValue mapping
+     * @param {Map} activeMetrics - The active metrics map
+     */
+    static applyOptimisticUpdates(metricUpdates, activeMetrics) {
+        for (const [metricKey, newValue] of Object.entries(metricUpdates)) {
+            const metric = activeMetrics.get(metricKey);
+            if (metric) {
+                metric.value = newValue;
+            }
+        }
     }
 }
 

@@ -8,11 +8,13 @@ export class OperationsManager {
   /**
    * @param {Array} dataArray - Reference to the array to be managed
    * @param {Function} notifyCallback - Function to call on data changes (type: 'create'|'update'|'delete')
+   * @param {Function} [modelClass] - Constructor function for the model class
    */
-  constructor(dataArray, notifyCallback) {
+  constructor(dataArray, notifyCallback, modelClass = null) {
     this.dataArray = dataArray;
     this.notify = notifyCallback;
     this.operationPatches = new Map();
+    this.ModelClass = modelClass;
   }
 
   /**
@@ -21,9 +23,13 @@ export class OperationsManager {
    * @param {string} operationId - Caller-supplied ID for the operation
    * @param {Function} mutator - Function that modifies the draft state
    * @param {string} eventType - Event type to notify ('create', 'update', 'delete')
+   * @param {Number} count - How many items are being modified
    * @returns {boolean} Whether the operation was successful
    */
-    applyMutation(operationId, mutator, eventType) {
+  applyMutation(operationId, mutator, eventType, count = null) {
+    
+    // Preserve the original form of the data
+    let originalArray = this.dataArray.map(m => m.serialize())
     
     try {
         // Use Mutative's create function with enablePatches to get patches and inverse patches
@@ -48,17 +54,35 @@ export class OperationsManager {
             eventType,
             timestamp: Date.now()
         });
+        
+        // Clear the array
         this.dataArray.length = 0;
 
-        // Use push.apply for better performance with large arrays
-        Array.prototype.push.apply(this.dataArray, newState);
-        this.notify(eventType);
+        // Apply the new state, converting plain objects to model instances if needed
+        if (this.ModelClass) {
+            for (const item of newState) {
+                // If it's not already an instance of our model class
+                if (!(item instanceof this.ModelClass)) {
+                    this.dataArray.push(new this.ModelClass(item));
+                } else {
+                    this.dataArray.push(item);
+                }
+            }
+        } else {
+            // No model class, just push the items directly
+            Array.prototype.push.apply(this.dataArray, newState);
+        }
+
+        let updatedArray = this.dataArray.map(m => m.serialize())
+        
+        this.notify(eventType, updatedArray, originalArray, operationId);
         
         return true;
     } catch (error) {
+        console.error("Mutation error:", error);
         return false;
     }
-}
+  }
 
   /**
    * Inserts items into the array with position and size constraints
@@ -72,8 +96,18 @@ export class OperationsManager {
    * @returns {boolean} Whether items were inserted
    */
   insert(operationId, items, options = {}) {
-    const itemsArray = Array.isArray(items) ? items : [items];
-    if (itemsArray.length === 0) {
+    // Ensure items are proper model instances if ModelClass is provided
+    let itemsToInsert;
+    if (this.ModelClass) {
+      const itemsArray = Array.isArray(items) ? items : [items];
+      itemsToInsert = itemsArray.map(item => 
+        item instanceof this.ModelClass ? item : new this.ModelClass(item)
+      );
+    } else {
+      itemsToInsert = Array.isArray(items) ? items : [items];
+    }
+    
+    if (itemsToInsert.length === 0) {
       return false;
     }
     
@@ -91,7 +125,7 @@ export class OperationsManager {
           }
           
           // Add items
-          draft.push(...itemsArray);
+          draft.push(...itemsToInsert);
           
           // Trim to limit if needed and not fixed size
           if (limit !== undefined && !fixedPageSize && draft.length > limit) {
@@ -100,11 +134,11 @@ export class OperationsManager {
         } else { // prepend
           if (limit !== undefined && fixedPageSize && draft.length >= limit) {
             // Remove from end to make room
-            draft.splice(draft.length - Math.min(itemsArray.length, draft.length));
+            draft.splice(draft.length - Math.min(itemsToInsert.length, draft.length));
           }
           
           // Add to beginning
-          draft.unshift(...itemsArray);
+          draft.unshift(...itemsToInsert);
           
           // Trim to limit if needed and not fixed size
           if (limit !== undefined && !fixedPageSize && draft.length > limit) {
@@ -116,57 +150,51 @@ export class OperationsManager {
     );
   }
 
-/**
- * Updates items in the array based on a filter function
- * 
- * @param {string} operationId - Caller-supplied ID for the operation
- * @param {Function} filterFn - Function to determine which items to update
- * @param {Object} updates - Properties to update
- * @returns {number} Count of updated items
- */
-update(operationId, filterFn, updates) {
+  /**
+   * Updates items in the array based on a filter function
+   * 
+   * @param {string} operationId - Caller-supplied ID for the operation
+   * @param {Function} filterFn - Function to determine which items to update
+   * @param {Object} updates - Properties to update
+   * @returns {number} Count of updated items
+   */
+  update(operationId, filterFn, updates) {
     let updateCount = 0;
+    
+    // Ensure updates respect the model class if provided
     const result = this.applyMutation(
         operationId,
         (draft) => {
             for (let i = 0; i < draft.length; i++) {
                 if (filterFn(draft[i])) {
-                    // Instead of Object.assign, create a completely new object
-                    const oldItem = draft[i];
-                    const newItem = { ...oldItem, ...updates };
+                    // Create a merged object with updates
+                    const updatedItem = { ...draft[i], ...updates };
                     
-                    // Replace the old item with the new one
-                    draft[i] = newItem;
+                    // Replace the item in the draft
+                    draft[i] = updatedItem;
                     updateCount++;
                 }
             }
         },
         'update'
     );
-    return result ? updateCount : 0;
-}
-
- /**
- * Removes items from the array based on a filter function
- * 
- * @param {string} operationId - Caller-supplied ID for the operation
- * @param {Function} filterFn - Function to determine which items to remove
- * @returns {number} Count of removed items
- */
-remove(operationId, filterFn) {
     
+    return result ? updateCount : 0;
+  }
+
+  /**
+   * Removes items from the array based on a filter function
+   * 
+   * @param {string} operationId - Caller-supplied ID for the operation
+   * @param {Function} filterFn - Function to determine which items to remove
+   * @returns {number} Count of removed items
+   */
+  remove(operationId, filterFn) {
     let removeCount = 0;
     
     const result = this.applyMutation(
         operationId,
         (draft) => {            
-            // Log the items that match the filter
-            const toRemove = [];
-            for (let i = 0; i < draft.length; i++) {
-                if (filterFn(draft[i])) {
-                    toRemove.push({index: i, item: draft[i]});
-                }
-            }            
             // Important: iterate backwards to avoid index issues when removing items
             for (let i = draft.length - 1; i >= 0; i--) {
                 if (filterFn(draft[i])) {
@@ -174,13 +202,12 @@ remove(operationId, filterFn) {
                     removeCount++;
                 }
             }
-            // Don't return anything here
         },
         'delete'
     );
     
     return result ? removeCount : 0;
-}
+  }
 
   /**
    * Rolls back an operation by applying its inverse patches
@@ -198,9 +225,20 @@ remove(operationId, filterFn) {
       // Apply inverse patches to revert changes
       const restoredState = apply(this.dataArray, operation.inversePatches);
       
-      // Update array reference
+      // Update array reference with proper model instances
       this.dataArray.length = 0;
-      this.dataArray.push(...restoredState);
+      
+      if (this.ModelClass) {
+        for (const item of restoredState) {
+          if (!(item instanceof this.ModelClass)) {
+            this.dataArray.push(new this.ModelClass(item));
+          } else {
+            this.dataArray.push(item);
+          }
+        }
+      } else {
+        this.dataArray.push(...restoredState);
+      }
       
       // Determine inverse event type for notification
       let notifyEventType;
