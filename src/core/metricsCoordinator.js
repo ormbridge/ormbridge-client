@@ -1,5 +1,3 @@
-// modelsync-client/src/core/metricsCoordinator.js
-
 /**
  * A simple coordinator that tracks refresh status and debounces refresh calls
  */
@@ -7,13 +5,13 @@ class MetricsCoordinator {
   constructor() {
     // Simple flag indicating if a refresh is in progress
     this.refreshInProgress = false;
-    
+
     // Timer for debounced refreshes
     this.refreshTimer = null;
-    
+
     // Default debounce time in ms
     this.debounceTime = 250;
-    
+
     // Timestamp of last optimistic update
     this.lastUpdateTime = 0;
   }
@@ -57,8 +55,8 @@ class MetricsCoordinator {
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
     }
-    
-    return new Promise(resolve => {
+
+    return new Promise((resolve) => {
       this.refreshTimer = setTimeout(async () => {
         // Only proceed if not already refreshing
         if (!this.refreshInProgress) {
@@ -66,7 +64,7 @@ class MetricsCoordinator {
             this.beginRefresh();
             await refreshFn();
           } catch (error) {
-            console.error('Error during metrics refresh:', error);
+            console.error("Error during metrics refresh:", error);
           } finally {
             this.endRefresh();
             this.refreshTimer = null;

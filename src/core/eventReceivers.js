@@ -1,5 +1,4 @@
 import Pusher from 'pusher-js';
-import { Model } from "../flavours/django/model.js";
 
 /**
  * Structure of events received from the server.
@@ -42,18 +41,6 @@ export const EventType = {
  */
 
 /**
- * Base interface for all event receivers.
- * @typedef {Object} EventReceiver
- * @property {function(): void} connect - Connect to the event source.
- * @property {function(): void} disconnect - Disconnect from the event source.
- * @property {function(string): void} subscribe - Subscribe to events for a specific namespace.
- * @property {function(string): void} unsubscribe - Unsubscribe from events for a specific namespace.
- * @property {function(EventHandler): void} addEventHandler - Add an event handler callback.
- * @property {function(EventHandler): void} removeEventHandler - Remove an event handler callback.
- * @property {function(NamespaceResolver): void} setNamespaceResolver - Set the namespace resolver.
- */
-
-/**
  * Options for instantiating a Pusher client.
  * @typedef {Object} PusherClientOptions
  * @property {string} appKey
@@ -79,23 +66,19 @@ export class PusherEventReceiver {
    * @param {PusherReceiverOptions} options 
    */
   constructor(options) {
-    const { appKey, cluster, forceTLS, authEndpoint, getAuthHeaders } = options.clientOptions;
-    // Instantiate the Pusher client with auth options.
-    this.pusherClient = new Pusher(appKey, {
-      cluster,
-      forceTLS: forceTLS !== undefined ? forceTLS : true,
-      authEndpoint,
-      auth: {
-        headers: getAuthHeaders ? getAuthHeaders() : {}
-      }
+    const { clientOptions, formatChannelName, namespaceResolver } = options;
+
+    this.pusherClient = new Pusher(clientOptions.appKey, {
+      cluster: clientOptions.cluster,
+      forceTLS: clientOptions.forceTLS ?? true,
+      authEndpoint: clientOptions.authEndpoint,
+      auth: { headers: clientOptions.getAuthHeaders?.() || {} }
     });
-    // Set channel formatter.
-    this.formatChannelName = options.formatChannelName || ((namespace) => `private-${namespace}`);
-    // Set namespace resolver.
-    this.namespaceResolver = options.namespaceResolver || ((modelName) => modelName);
-    /** @type {Map<string, any>} */
-    this.channels = new Map(); // Map of namespace to Pusher channel.
-    /** @type {Set<EventHandler>} */
+
+    this.formatChannelName = formatChannelName ?? (ns => `private-${ns}`);
+    this.namespaceResolver = namespaceResolver ?? (modelName => modelName);
+
+    this.channels = new Map();
     this.eventHandlers = new Set();
   }
 
@@ -110,45 +93,34 @@ export class PusherEventReceiver {
   /**
    * Connect to Pusher (no-op since Pusher handles connection automatically).
    */
-  connect() {
-    // Pusher manages connection automatically.
-  }
+  connect() {}
 
   /**
    * Subscribe to events for a specific namespace.
    * @param {string} namespace 
    */
   subscribe(namespace) {
-    if (this.channels.has(namespace)) {
-      return;
-    }
-    // Format channel name as expected.
+    if (this.channels.has(namespace)) return;
+
     const channelName = this.formatChannelName(namespace);
     console.log(`Subscribing to channel: ${channelName}`);
     const channel = this.pusherClient.subscribe(channelName);
-    // Bind subscription success event.
+
     channel.bind('pusher:subscription_succeeded', () => {
       console.log(`Subscription succeeded for channel: ${channelName}`);
     });
-    // Bind subscription error event.
-    channel.bind('pusher:subscription_error', (status) => {
+
+    channel.bind('pusher:subscription_error', status => {
       console.error(`Subscription error for channel: ${channelName}. Status:`, status);
     });
-    // Bind each event type and notify all registered event handlers.
-    for (const eventType of Object.values(EventType)) {
-      channel.bind(eventType, (data) => {
-        /** @type {ModelEvent} */
-        const event = {
-          ...data,
-          type: data.event || eventType,
-          namespace: namespace
-        };
-        for (const handler of this.eventHandlers) {
-          handler(event);
-        }
+
+    Object.values(EventType).forEach(eventType => {
+      channel.bind(eventType, data => {
+        const event = { ...data, type: data.event || eventType, namespace };
+        this.eventHandlers.forEach(handler => handler(event));
       });
-    }
-    // Store the channel.
+    });
+
     this.channels.set(namespace, channel);
   }
 
@@ -157,17 +129,12 @@ export class PusherEventReceiver {
    * @param {string} namespace 
    */
   unsubscribe(namespace) {
-    if (!this.channels.has(namespace)) {
-      return;
-    }
     const channel = this.channels.get(namespace);
-    // Unbind all event handlers.
-    for (const eventType of Object.values(EventType)) {
-      channel.unbind(eventType);
-    }
-    // Unsubscribe from the channel.
-    const channelName = this.formatChannelName(namespace);
-    this.pusherClient.unsubscribe(channelName);
+    if (!channel) return;
+
+    Object.values(EventType).forEach(eventType => channel.unbind(eventType));
+
+    this.pusherClient.unsubscribe(this.formatChannelName(namespace));
     this.channels.delete(namespace);
   }
 
@@ -175,9 +142,7 @@ export class PusherEventReceiver {
    * Disconnect from Pusher.
    */
   disconnect() {
-    for (const namespace of this.channels.keys()) {
-      this.unsubscribe(namespace);
-    }
+    [...this.channels.keys()].forEach(ns => this.unsubscribe(ns));
     this.pusherClient.disconnect();
   }
 
