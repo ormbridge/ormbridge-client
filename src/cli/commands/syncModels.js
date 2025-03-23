@@ -111,7 +111,7 @@ const JS_MODEL_TEMPLATE = `/**
  */
 
 import _ from 'lodash-es';
-import { Model, APIManager, QuerySet } from '{{modulePath}}';
+import { Model, Manager, QuerySet } from '{{modulePath}}';
 import { createModelInstance } from '{{modulePath}}';
 import schemaData from './{{className}}.schema.json';
 {{#if jsImports}}
@@ -130,7 +130,7 @@ export class {{className}}QuerySet extends QuerySet {
 /**
  * Model-specific Manager implementation
  */
-export class {{className}}Manager extends APIManager {
+export class {{className}}Manager extends Manager {
   constructor(ModelClass) {
     super(ModelClass, {{className}}QuerySet);
   }
@@ -227,8 +227,8 @@ import { Model, Manager, ModelSummary, ModelSummaryFields } from '{{modulePath}}
 import { StringOperators, NumberOperators, BooleanOperators, DateOperators } from '{{modulePath}}';
 import { QuerySet, LiveQuerySet, LiveQuerySetOptions, MetricResult, ResultTuple, SerializerOptions, NestedPaths } from '{{modulePath}}';
 
-// Re-export the real APIManager for runtime use
-import { APIManager as RuntimeAPIManager } from '{{modulePath}}';
+// Re-export the real Manager for runtime use
+import { Manager as RuntimeManager } from '{{modulePath}}';
 {{#if tsImports}}
 {{#each tsImports}}
 {{{this}}}
@@ -389,11 +389,11 @@ export declare class {{className}}LiveQuerySet extends LiveQuerySet {
 }
 
 /**
- * Enhanced RuntimeAPIManager to provide TypeScript typings
- * This creates a concrete class that both extends RuntimeAPIManager and matches type expectations
+ * Enhanced RuntimeManager to provide TypeScript typings
+ * This creates a concrete class that both extends RuntimeManager and matches type expectations
  */
-export class {{className}}APIManager extends RuntimeAPIManager {
-  filter(conditions: {{className}}FilterData): ReturnType<RuntimeAPIManager['filter']> {
+export class {{className}}Manager extends RuntimeManager {
+  filter(conditions: {{className}}FilterData): ReturnType<RuntimeManager['filter']> {
     return super.filter(conditions as any);
   }
   

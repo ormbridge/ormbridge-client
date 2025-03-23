@@ -1,5 +1,4 @@
 import { Manager } from './manager.js';
-import { QuerySet } from './querySet.js';
 import { getConfig } from '../../config.js';
 import { ValidationError } from './errors.js';
 
@@ -167,22 +166,5 @@ export class Model {
     const ModelClass = this.constructor;
     const fresh = await ModelClass.objects.get({ [ModelClass.primaryKeyField]: this.pk });
     Object.assign(this, fresh);
-  }
-}
-
-/**
- * APIManager class that extends Manager for API-integrated operations.
- *
- * @extends Manager
- */
-export class APIManager extends Manager {
-  /**
-   * Creates a new APIManager.
-   *
-   * @param {ModelConstructor} ModelClass - The model constructor.
-   */
-  constructor(ModelClass) {
-    // Use the integrated QuerySet directly instead of APIQuerySet.
-    super(ModelClass, QuerySet);
   }
 }
