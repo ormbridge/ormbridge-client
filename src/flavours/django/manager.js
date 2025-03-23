@@ -47,7 +47,6 @@ export class Manager {
    * Creates a new Manager.
    *
    * @param {Function} ModelClass - The model's constructor.
-   *   It is expected that ModelClass provides an `objects` property with QuerySet functionality.
    * @param {Function} [QuerySetClass=QuerySet] - The QuerySet class to use.
    */
   constructor(ModelClass, QuerySetClass = QuerySet) {

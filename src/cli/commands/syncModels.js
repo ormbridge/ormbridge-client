@@ -132,7 +132,7 @@ export class {{className}}QuerySet extends QuerySet {
  */
 export class {{className}}Manager extends APIManager {
   constructor(ModelClass) {
-    super(ModelClass);
+    super(ModelClass, {{className}}QuerySet);
   }
   
   newQuerySet() {
