@@ -14,8 +14,8 @@ import {
   DoesNotExist,
 } from "../flavours/django/errors.js";
 import MetricsManager from "./MetricsManager";
-import { updateArrayInPlace } from './utils.js'
-
+import { updateArrayInPlace } from './utils.js';
+import { OperationsManager } from "./operationsManager";
 
 // --------------------
 // JSDoc Type Definitions
@@ -237,8 +237,6 @@ export const handleModelEvent = async (event) => {
 /**
  * LiveQuerySet implementation for live views.
  */
-import { OperationsManager } from "./operationsManager"; // Import the new OperationsManager
-
 export class LiveQuerySet {
   /**
    * @typedef {Object} LiveQuerySetOptions
