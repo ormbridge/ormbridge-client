@@ -266,7 +266,7 @@ export class LiveQuerySet {
   ) {
     this.qs = qs;
     this.dataArray = dataArray;
-    this.createdItems = createdItems || [];
+    this.createdItems = createdItems || new Set();
     this.filterFn = filterFn || (() => true);
     this.options = options || {};
     this._serializerOptions = this.options.serializer || {};
@@ -651,7 +651,7 @@ export class LiveQuerySet {
           (item) => item[pkField] === operationId,
           createdItem
         );
-        this.createdItems.push(createdItem[pkField])
+        this.createdItems.add(createdItem[pkField])
 
         return createdItem;
       } catch (error) {
@@ -774,20 +774,32 @@ export class LiveQuerySet {
     if (!instanceIds?.length) return;
     
     try {
-      // Fetch all updated instances
+      // Fetch all updated instances that match our filter
       const updatedInstances = await this.qs
         .filter({ [`${pkField}__in`]: instanceIds })
         .fetch();
-        
-      if (!updatedInstances?.length) {
-        console.warn("No instances found for bulk update event with IDs:", instanceIds);
-        return;
-      }
       
-      // Create map for O(1) lookups
+      // Create map for O(1) lookups of updated instances that match the filter
       const updatedMap = new Map(
         updatedInstances.map(instance => [instance[pkField], instance])
       );
+      
+      // Get all items in our data array that are in the instanceIds list
+      const existingItemsToRemove = [];
+      const existingItemIds = new Set();
+      
+      for (const item of this.dataArray) {
+        const pkValue = item[pkField];
+        if (instanceIds.includes(pkValue)) {
+          existingItemIds.add(pkValue);
+          
+          // If item exists in our array but not in updatedMap,
+          // it was updated but no longer matches the filter
+          if (!updatedMap.has(pkValue) && !this.createdItems.has(pkValue)) {
+            existingItemsToRemove.push(pkValue);
+          }
+        }
+      }
       
       // Track items not found in draft for potential creation
       const notFoundPKs = new Set(updatedMap.keys());
@@ -808,6 +820,14 @@ export class LiveQuerySet {
         },
         "update"
       );
+      
+      // Remove items that no longer match the filter
+      if (existingItemsToRemove.length > 0) {
+        this.operationsManager.remove(
+          operationId,
+          (x) => existingItemsToRemove.includes(x[pkField])
+        );
+      }
       
       // Handle new instances (that weren't in the draft)
       if (notFoundPKs.size > 0) {
@@ -931,19 +951,20 @@ export class LiveQuerySet {
           item
         );
       } else {
-        // Item exists in our collection but is no longer in the filtered queryset
-        // We need to remove it
-        this.operationsManager.remove(
-          operationId,
-          (x) => x[pkField] === pkValue
-        );
+        // If it was created in this lqs - item gets a stay of execution
+        if (!this.createdItems.has(pkValue)){
+          this.operationsManager.remove(
+            operationId,
+            (x) => x[pkField] === pkValue
+          );
+        }
       }
     } else if (item && this.filterFn(item)) {
       // Item doesn't exist in our collection but matches our filter, add it
       this.handleExternalCreateEvent(item);
     }
   }
-  
+
   /**
    * Handles an external delete event.
    * @param {number|string} itemId - The primary key value of the deleted item.
