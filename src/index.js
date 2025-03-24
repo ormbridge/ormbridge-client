@@ -1,93 +1,14 @@
-// Core event receivers
-import {
-    EventType,
-    PusherEventReceiver,
-    setEventReceiver,
-    getEventReceiver,
-    setNamespaceResolver
-  } from './core/eventReceivers.js';
-  
-  // Core live view
-  import {
-    LiveQuerySet,
-    liveView,
-    legacyLiveView,
-    handleModelEvent,
-    liveQueryRegistry,
-    activeOperationIds,
-    generateOperationId,
-    withOperationId,
-    defaultNamespaceResolver
-  } from './core/liveView.js';
-  
-  // Django flavor modules
-  import { Q } from './flavours/django/q.js';
-  import {
-    ORMBridgeError,
-    ValidationError,
-    DoesNotExist,
-    PermissionDenied,
-    MultipleObjectsReturned,
-    ASTValidationError,
-    ConfigError,
-    parseORMBridgeError
-  } from './flavours/django/errors.js';
-  import { QuerySet } from './flavours/django/querySet.js';
-  import { Manager, ResultTuple } from './flavours/django/manager.js';
-  import { Model } from './flavours/django/model.js';
-  import { createModelInstance } from './flavours/django/createModelInstance.js';
-  import { ModelSummary } from './flavours/django/modelSummary.js';
-  
-  // Configuration
-  import {
-    setConfig,
-    getConfig,
-    setBackendConfig,
-    initializeEventReceiver,
-    configInstance
-  } from './config.js';
-  
-  // Explicitly export everything
-  export {
-    // Core event receivers
-    EventType,
-    PusherEventReceiver,
-    setEventReceiver,
-    getEventReceiver,
-    setNamespaceResolver,
-    
-    // Core live view
-    LiveQuerySet,
-    liveView,
-    legacyLiveView,
-    handleModelEvent,
-    liveQueryRegistry,
-    activeOperationIds,
-    generateOperationId,
-    withOperationId,
-    defaultNamespaceResolver,
-    
-    // Django flavor modules
-    Q,
-    ORMBridgeError,
-    ValidationError,
-    DoesNotExist,
-    PermissionDenied,
-    MultipleObjectsReturned,
-    ASTValidationError,
-    ConfigError,
-    parseORMBridgeError,
-    QuerySet,
-    Manager,
-    ResultTuple,
-    Model,
-    createModelInstance,
-    ModelSummary,
-    
-    // Configuration
-    setConfig,
-    getConfig,
-    setBackendConfig,
-    initializeEventReceiver,
-    configInstance
-  };
+
+// Main entry point re-exporting core modules
+export * from './core/eventReceivers.js';
+export * from './core/liveView.js';
+
+// Export Django flavor modules
+export * from './flavours/django/q.js';
+export * from './flavours/django/errors.js';
+export * from './flavours/django/querySet.js';
+export * from './flavours/django/manager.js';
+export * from './flavours/django/model.js';
+export * from './flavours/django/createModelInstance.js';
+export * from './flavours/django/modelSummary.js';
+export * from './config.js';
