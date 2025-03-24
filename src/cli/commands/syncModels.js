@@ -287,8 +287,6 @@ export interface {{className}}FilterData {
   {{name}}__istartswith?: string;
   {{name}}__endswith?: string;
   {{name}}__iendswith?: string;
-  {{name}}__regex?: string;
-  {{name}}__iregex?: string;
   {{name}}__exact?: string;
   {{name}}__iexact?: string;
   {{name}}__in?: string[];
