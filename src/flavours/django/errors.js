@@ -31,6 +31,28 @@ export class ORMBridgeError extends Error {
     this.status = status;
     Object.setPrototypeOf(this, new.target.prototype);
   }
+
+  /**
+   * Returns a full error message including the detail.
+   * 
+   * @returns {string} The full error message with details
+   */
+  getFullMessage() {
+    if (typeof this.detail === 'string') {
+      return `${this.message}: ${this.detail}`;
+    } else if (this.detail && typeof this.detail === 'object') {
+      if (this.detail.message) {
+        return `${this.message}: ${this.detail.message}`;
+      } else {
+        try {
+          return `${this.message}: ${JSON.stringify(this.detail)}`;
+        } catch (e) {
+          return `${this.message}: [Complex detail object]`;
+        }
+      }
+    }
+    return this.message;
+  }
 }
 
 /**
