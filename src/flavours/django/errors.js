@@ -153,6 +153,7 @@ export class ConfigError extends ORMBridgeError {
  * @returns {ORMBridgeError} An instance of a ORMBridgeError subclass.
  */
 export function parseORMBridgeError(errorResponse) {
+  console.log(errorResponse)
   const { status, type, detail } = errorResponse;
   
   // Handle undefined type/status case (like in permission denied)

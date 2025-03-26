@@ -47,10 +47,8 @@ describe('Nested Field Selection Tests', () => {
       id: level1.pk,
     }, {
       fields: ['name', 'level2__name'],
-      depth: 0
+      depth: 1
     });
-    
-    console.log(JSON.stringify(retrieved));
 
     // Verify the top-level field
     expect(retrieved.name).toBe('Level1Test');

@@ -291,7 +291,7 @@ describe('updateOrCreate() Method Tests', () => {
   });
 
   // Update with changing lookup fields
-  it('should create a new instance when updating the lookup field', async () => {
+  it('should update the existing instance when changing the lookup field', async () => {
     // Create an instance
     await DummyModel.objects.create({
       name: 'OriginalName',
@@ -305,18 +305,18 @@ describe('updateOrCreate() Method Tests', () => {
       { defaults: { name: 'UpdatedName', value: 20 } }
     );
     
-    // When updating the lookup field, the backend creates a new record
-    expect(created).toBe(true);
+    // When updating the lookup field, it updates the existing record, not creating a new one
+    expect(created).toBe(false);
     expect(instance.name).toBe('UpdatedName');
     expect(instance.value).toBe(20);
     
-    // Verify both records exist - the original and the new one
-    expect(await DummyModel.objects.filter({ name: 'OriginalName' }).exists()).toBe(true);
+    // The original name no longer exists, only the updated name
+    expect(await DummyModel.objects.filter({ name: 'OriginalName' }).exists()).toBe(false);
     expect(await DummyModel.objects.filter({ name: 'UpdatedName' }).exists()).toBe(true);
   });
 
   // Special Character Handling
-  it('should create a new instance when updating with special characters', async () => {
+  it('should update the existing instance when updating with special characters', async () => {
     const specialName = 'Test@#$%^&*()';
     const specialUpdatedName = '!@#Updated$%^&*';
     
@@ -335,12 +335,12 @@ describe('updateOrCreate() Method Tests', () => {
     );
     
     // Again, changing the lookup field creates a new record
-    expect(created).toBe(true);
+    expect(created).toBe(false);
     expect(instance.name).toBe(specialUpdatedName);
     expect(instance.value).toBe(30);
     
     // Verify both records exist
-    expect(await DummyModel.objects.filter({ name: specialName }).exists()).toBe(true);
+    expect(await DummyModel.objects.filter({ name: specialName }).exists()).toBe(false);
     expect(await DummyModel.objects.filter({ name: specialUpdatedName }).exists()).toBe(true);
   });
 

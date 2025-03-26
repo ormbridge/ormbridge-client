@@ -60,6 +60,33 @@ describe('Permission and Custom PK Tests (admin user)', () => {
       expect(instance.name).toBe('Test Custom PK');
       expect(instance.pk).toBe(customPKInstance.pk);
     });
+
+    it('should not allow writing to the pk field of CustomPKModel', async () => {
+      // Fetch the instance created in beforeEach
+      const instance = await CustomPKModel.objects.get({ custom_pk: customPKInstance.pk });
+      
+      await CustomPKModel.objects.filter({ custom_pk: instance.pk }).update({ custom_pk: 555, name: "updated" })
+
+      let updated = await CustomPKModel.objects.get({ custom_pk: instance.pk })
+
+      try {
+        updated.custom_pk = 555
+        await updated.save()
+      } catch {
+        console.log("Expected to error because we are trying to write to the pk")
+      }
+
+      // refresh - can't do refresh from db because it will fail
+      updated = await CustomPKModel.objects.get({ custom_pk: instance.pk })
+      
+      await expect(
+        CustomPKModel.objects.get({ custom_pk: 555, name: "updated" })
+      ).rejects.toThrow(DoesNotExist);
+      
+      // Assert that the pk remains unchanged
+      expect(updated.pk).toBe(instance.pk);
+      expect(updated.name).toBe("updated")
+    });
     
     it('should allow creating a new CustomPKModel', async () => {
       const newInstance = await CustomPKModel.objects.create({ name: 'New Custom PK' });
@@ -304,6 +331,7 @@ describe('Permission and Custom PK Tests (non-admin user)', () => {
     
     it('should only show allowed visible fields in summary representation', async () => {
       const instance = await ModelWithCustomPKRelation.objects.get({ pk: relationInstance.pk });
+      console.log(instance)
       expect(instance.name).toBe('Test Relation');
       expect(instance.pk).toBeDefined();
       // For non-admin users the summary representation returns the related field.
@@ -327,7 +355,7 @@ describe('Permission and Custom PK Tests (non-admin user)', () => {
       } else {
         expect(updated.custom_pk_related).toBe(customPKInstance.custom_pk);
       }
-    });
+    });    
     
     it('should NOT allow creating ModelWithCustomPKRelation with allowed fields only', async () => {
       // Since ModelWithCustomPKRelation requires the custom_pk_related field,
