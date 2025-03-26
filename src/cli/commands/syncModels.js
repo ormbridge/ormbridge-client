@@ -167,11 +167,7 @@ export class {{className}} extends Model {
       : data.{{name}};
     {{/if}}
   {{else}}
-    {{#ifDefaultProvided defaultValue}}
-    this.{{name}} = _.defaultTo(data.{{name}}, {{{defaultValue}}});
-    {{else}}
     this.{{name}} = data.{{name}};
-    {{/ifDefaultProvided}}
   {{/if}}
 {{/each}}
   }

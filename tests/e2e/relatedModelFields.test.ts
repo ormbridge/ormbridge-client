@@ -59,5 +59,25 @@ describe('Nested Field Selection Tests', () => {
     
     // Since we did not select the "level3" field in Level2, it should be null
     expect(retrieved.level2.level3).toBeUndefined();
+
+    // Query Level1 and use serializerOptions to select only the "name" field on the nested Level2.
+    // The double underscore notation ("level2__name") tells the serializer to include the "name"
+    // field for the related Level2 model.
+    const retrievedWithoutDepth = await DeepModelLevel1.objects.get({
+      id: level1.pk,
+    }, {
+      fields: ['name', 'level2__name', 'level2__level3'],
+      depth: 0
+    });
+
+    // Verify the top-level field
+    expect(retrievedWithoutDepth.name).toBe('Level1Test');
+    
+    // Verify that the nested Level2 model is returned and its "name" field is populated
+    expect(retrievedWithoutDepth.level2).toBeDefined();
+    expect(retrievedWithoutDepth.level2.name).toBe('Level2Test');
+    
+    // Since we did not select the "level3" field in Level2, it should be null
+    expect(retrievedWithoutDepth.level2.level3).toBe(level3.id);
   });
 });
