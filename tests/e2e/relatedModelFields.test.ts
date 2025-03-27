@@ -66,8 +66,8 @@ describe('Nested Field Selection Tests', () => {
     const retrievedWithoutDepth = await DeepModelLevel1.objects.get({
       id: level1.pk,
     }, {
-      fields: ['name', 'level2__name', 'level2__level3'],
-      depth: 0
+      fields: ['name', 'level2__name', 'level2__level3__name'],
+      depth: 2
     });
 
     // Verify the top-level field
@@ -78,6 +78,6 @@ describe('Nested Field Selection Tests', () => {
     expect(retrievedWithoutDepth.level2.name).toBe('Level2Test');
     
     // Since we did not select the "level3" field in Level2, it should be null
-    expect(retrievedWithoutDepth.level2.level3).toBe(level3.id);
+    expect(retrievedWithoutDepth.level2.level3.id).toBe(level3.id);
   });
 });

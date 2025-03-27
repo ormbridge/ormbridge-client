@@ -126,6 +126,65 @@ export class Manager {
   }
 
   /**
+   * Counts the number of records matching the current query.
+   *
+   * @param {string} [field] - Optional field to count (defaults to 'pk')
+   * @returns {Promise<number>} A promise that resolves to the count
+   */
+  async count(field) {
+    return this.newQuerySet().count(field);
+  }
+
+  /**
+   * Computes the sum of values for the specified field.
+   *
+   * @param {string} field - The field to sum
+   * @returns {Promise<number>} A promise that resolves to the sum
+   */
+  async sum(field) {
+    return this.newQuerySet().sum(field);
+  }
+
+  /**
+   * Computes the average value for the specified field.
+   *
+   * @param {string} field - The field to average
+   * @returns {Promise<number>} A promise that resolves to the average
+   */
+  async avg(field) {
+    return this.newQuerySet().avg(field);
+  }
+
+  /**
+   * Finds the minimum value for the specified field.
+   *
+   * @param {string} field - The field to find the minimum value for
+   * @returns {Promise<any>} A promise that resolves to the minimum value
+   */
+  async min(field) {
+    return this.newQuerySet().min(field);
+  }
+
+  /**
+   * Finds the maximum value for the specified field.
+   *
+   * @param {string} field - The field to find the maximum value for
+   * @returns {Promise<any>} A promise that resolves to the maximum value
+   */
+  async max(field) {
+    return this.newQuerySet().max(field);
+  }
+
+  /**
+   * Checks if any records exist that match the current query.
+   *
+   * @returns {Promise<boolean>} A promise that resolves to true if records exist, otherwise false
+   */
+  async exists() {
+    return this.newQuerySet().exists();
+  }
+
+  /**
    * Orders the QuerySet by the provided fields.
    *
    * @param {...(string|any)} fields - The fields to order by. Supports nested paths and descending order
