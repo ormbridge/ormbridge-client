@@ -10,8 +10,6 @@ export interface SerializerOptions {
     limit?: number;
     /** Offset for pagination. */
     offset?: number;
-    /** Buffer overfetching for optimistic deletes */
-    buffer?: number;
   }
   
   /**

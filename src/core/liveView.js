@@ -600,11 +600,45 @@ export class LiveQuerySet {
             throw new Error(result?.error || "Delete failed");
           }
 
+          // Refetch new items to refill display if we have a limit
+          if (this._serializerOptions?.limit) {
+            try {
+              // Only fetch the number of items that were deleted
+              const newOptions = {
+                ...this._serializerOptions,
+                limit: deletedCount,
+                offset: this.dataArray.length
+              };
+              
+              // Fetch replacement items
+              const newItems = await this.qs.fetch(newOptions);
+              
+              if (newItems.length > 0) {
+                // Add the new items using the operations manager
+                this.operationsManager.insert(
+                  `${operationId}_refetch`,
+                  newItems,
+                  {
+                    position: "append",
+                    limit: this._serializerOptions.limit,
+                    fixedPageSize: false
+                  }
+                );
+              }
+            } catch (refetchError) {
+              console.warn("Error refetching items after delete:", refetchError);
+              // Continue with the delete operation even if refetch fails
+            }
+          }
+
           return deletedCount;
         } catch (error) {
           // Rollback using the operations manager
           this._notifyError(error, "delete");
           this.operationsManager.rollback(operationId);
+
+          // Also rollback any refetch operation if it was performed
+          this.operationsManager.rollback(`${operationId}_refetch`);
 
           // Re-throw to be caught by the outer try/catch
           throw error;
