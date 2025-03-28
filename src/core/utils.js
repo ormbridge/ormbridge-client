@@ -9,7 +9,7 @@ import * as arrayDiff from "fast-array-diff";
  * @param {string|Function} primaryKey - Primary key field name or comparison function
  * @returns {Array} - The updated sourceArray (same reference)
  */
-export function updateArrayInPlace(sourceArray, targetArray, primaryKey = "id") {
+function updateArrayInPlace(sourceArray, targetArray, primaryKey = "id") {
     // Handle empty arrays
     if (targetArray.length === 0) {
       sourceArray.length = 0;
