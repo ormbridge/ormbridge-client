@@ -101,8 +101,9 @@ export class OverfetchCache {
     // Always check if we have a cache to work with
     if (!this.mainDataArray || !this.limit) return;
     
-    // Normalize pkValues to an array
+    // Normalize pkValues to an array and convert to a Set for fast lookups
     const pkArray = Array.isArray(pkValues) ? pkValues : [pkValues];
+    const pkSet = new Set(pkArray);
     
     // For create events, refresh if cache isn't full
     if (eventType === EventType.CREATE) {
@@ -115,16 +116,15 @@ export class OverfetchCache {
     
     // For update or delete events, check if they affect our cached items
     if (eventType === EventType.UPDATE || eventType === EventType.DELETE) {
-      // Check if any of our cached items are affected
+      // Check if any of our cached items are affected using the set
       const isCacheAffected = this.cacheItems.some(item => 
-        pkArray.includes(item[this.primaryKeyField])
+        pkSet.has(item[this.primaryKeyField])
       );
 
-      // If its a delete, remove immediately
-      if (eventType === EventType.DELETE){
-        // Immediately filter out the deleted items from the cache
+      // If it's a delete, remove the affected items immediately
+      if (eventType === EventType.DELETE) {
         this.cacheItems = this.cacheItems.filter(
-          item => !new Set(pkSet).has(item[this.primaryKeyField])
+          item => !pkSet.has(item[this.primaryKeyField])
         );
       }
       
