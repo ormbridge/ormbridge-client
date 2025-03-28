@@ -150,8 +150,9 @@ export class OperationsManager {
       if (replacements.length > 0) {
         const createSuccess = this.applyMutation(operationId, draft => {
           // Filter out any replacement items that already exist in the data array
-          const existingIds = new Set(draft.map(item => item.id));
-          const uniqueReplacements = replacements.filter(item => !existingIds.has(item.id));
+          const pkField = this.ModelClass.primaryKeyField || 'id';
+          const existingIds = new Set(draft.map(item => item[pkField]));
+          const uniqueReplacements = replacements.filter(item => !existingIds.has(item[pkField]));
           
           // Insert unique replacement items – here we push them at the end.
           if (uniqueReplacements.length > 0) {

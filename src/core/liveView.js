@@ -171,6 +171,7 @@ export const handleModelEvent = async (event) => {
 
   // Process the event for each relevant LiveQuerySet
   for (const lqs of liveQuerySets) {
+    console.log(`handling for lqs with parent: ${lqs.parent}`)
     if (lqs.ModelClass.modelName !== model) continue;
 
     // Refresh metrics in every queryset, because they are usually different; log errors if any
@@ -316,18 +317,22 @@ export class LiveQuerySet {
       this.options.overfetchSize = Math.min(this._serializerOptions.limit, 10);
     }
     
-    // Enable overfetch if size > 0 and limit is set
-    if (this.options.overfetchSize > 0 && this._serializerOptions.limit) {
-      this.overfetchCache = new OverfetchCache(
-        this._findRootQuerySet(),
-        this.options,
-        this.options.overfetchSize
-      );
-      
-      // Initialize the cache
-      this.overfetchCache.initialize().catch(err => {
-        console.error("Error initializing overfetch cache:", err);
-      });
+    if (!this.parent){
+      // Enable overfetch if size > 0 and limit is set
+      if (this.options.overfetchSize > 0 && this._serializerOptions.limit) {
+        this.overfetchCache = new OverfetchCache(
+          this._findRootQuerySet(),
+          this.options,
+          this.options.overfetchSize
+        );
+        
+        // Initialize the cache
+        this.overfetchCache.initialize().catch(err => {
+          console.error("Error initializing overfetch cache:", err);
+        });
+      }
+    } else {
+      this.overfetchCache = parent.overfetchCache
     }
 
     // Initialize the OperationsManager
