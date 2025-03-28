@@ -187,5 +187,9 @@ export function useLiveView(queryInput, options = {}, deps = []) {
     };
   }, effectDeps);
   
-  return [data, liveQueryRef.current, isLoading];
+  return {
+    data,
+    query: liveQueryRef.current,
+    isLoading
+  };
 }

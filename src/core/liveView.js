@@ -14,7 +14,7 @@ import {
   DoesNotExist,
 } from "../flavours/django/errors.js";
 import MetricsManager from "./MetricsManager";
-import { updateArrayInPlace } from './utils.js';
+import { updateArrayInPlace, refetchAfterDelete } from './utils.js';
 import { OperationsManager } from "./operationsManager";
 
 // --------------------
@@ -599,40 +599,9 @@ export class LiveQuerySet {
           if (!result || result.error) {
             throw new Error(result?.error || "Delete failed");
           }
-
+          
           // Refetch new items to refill display if we have a limit
-          if (this._serializerOptions?.limit) {
-            try {
-              // Find the root queryset for refetching
-              const rootQs = this.parent ? this._findRootQuerySet() : this.qs;
-
-              // Only fetch the number of items that were deleted
-              const newOptions = {
-                ...this._serializerOptions,
-                limit: deletedCount,
-                offset: this.dataArray.length
-              };
-              
-              // Fetch replacement items
-              let newItems = await rootQs.fetch(newOptions);
-              console.log(`fetched items: ${JSON.stringify(newItems)}}`)
-              
-              if (newItems.length > 0) {
-                // Add the new items using the operations manager
-                this.operationsManager.insert(
-                  `${operationId}_refetch`,
-                  newItems,
-                  {
-                    position: "append",
-                    limit: this._serializerOptions.limit,
-                    fixedPageSize: false
-                  }
-                );
-              }
-            } catch (refetchError) {
-              console.warn("Error refetching items after delete:", refetchError);
-            }
-          }
+          await refetchAfterDelete(this, deletedCount, operationId);
 
           return deletedCount;
         } catch (error) {
@@ -917,13 +886,32 @@ export class LiveQuerySet {
     if (!instanceIds || instanceIds.length === 0) {
       return;
     }
-
+  
+    if (activeOperationIds.has(operationId)) {
+      return;
+    }
+  
     const deletedIdsSet = new Set(instanceIds);
-
-    // Use the operations manager to remove items with matching IDs
-    this.operationsManager.remove(operationId, (item) =>
+    
+    // Count the number of items that will be deleted
+    const itemsToDelete = this.dataArray.filter(item => 
       deletedIdsSet.has(item[pkField])
     );
+    
+    if (itemsToDelete.length === 0) {
+      return; // No items to delete
+    }
+  
+    // Use the operations manager to remove items with matching IDs
+    const deletedCount = this.operationsManager.remove(
+      operationId,
+      (item) => deletedIdsSet.has(item[pkField])
+    );
+  
+    // If we deleted any items and have a limit, refetch
+    if (deletedCount > 0) {
+      refetchAfterDelete(this, deletedCount, operationId, true);
+    }
   }
 
   /**
@@ -1005,17 +993,28 @@ export class LiveQuerySet {
    * @param {number|string} itemId - The primary key value of the deleted item.
    */
   handleExternalDeleteEvent(itemId, operationId) {
-    if (activeOperationIds.has(itemId)) {
+    if (activeOperationIds.has(operationId)) {
       return;
     }
-
+  
     const pkField = this.ModelClass.primaryKeyField || "id";
-
+  
+    // Find the item before removing it (to verify it exists)
+    const itemToDelete = this.dataArray.find(item => item[pkField] === itemId);
+    if (!itemToDelete) {
+      return; // Item not found, nothing to delete
+    }
+  
     // Remove the item with the given ID
-    this.operationsManager.remove(
+    const deletedCount = this.operationsManager.remove(
       operationId,
       (item) => item[pkField] === itemId
     );
+  
+    // If we successfully deleted an item and have a limit, refetch
+    if (deletedCount > 0) {
+      refetchAfterDelete(this, deletedCount, operationId, true);
+    }
   }
 
   /**
