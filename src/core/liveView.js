@@ -14,7 +14,7 @@ import {
   DoesNotExist,
 } from "../flavours/django/errors.js";
 import MetricsManager from "./MetricsManager";
-import { updateArrayInPlace } from './utils.js';
+import { updateArrayInPlace, refetchAfterDelete } from './utils.js';
 import { OperationsManager } from "./operationsManager";
 import { OverfetchCache } from "./overfetchCache.js";
 
@@ -672,7 +672,6 @@ export class LiveQuerySet {
         const deletedCount = this.operationsManager.remove(
           operationId,
           this.filterFn,
-          { skipRefresh: isBulkDelete }
         );
 
         // If nothing was deleted, we're done
@@ -987,8 +986,7 @@ export class LiveQuerySet {
     // This ensures we don't get stale items from the cache
     let deletedCount = this.operationsManager.remove(
       operationId, 
-      (item) => deletedIdsSet.has(item[pkField]),
-      { skipRefresh: true }
+      (item) => deletedIdsSet.has(item[pkField])
     );
     
     // Use refetchAfterDelete to fetch fresh replacement items in the background
