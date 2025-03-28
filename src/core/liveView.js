@@ -16,6 +16,7 @@ import {
 import MetricsManager from "./MetricsManager";
 import { updateArrayInPlace } from './utils.js';
 import { OperationsManager } from "./operationsManager";
+import { OverfetchCache } from "./overfetchCache.js";
 
 // --------------------
 // JSDoc Type Definitions
@@ -304,11 +305,34 @@ export class LiveQuerySet {
     this.callbacks = [];
     this.errorCallbacks = [];
 
+    // Initialize the OverfetchCache if overfetchSize is > 0 and pagination is enabled
+    this.overfetchCache = null;
+    
+    // Set default overfetchSize if not specified
+    if (this.options.overfetchSize === undefined && this._serializerOptions.limit) {
+      this.options.overfetchSize = Math.min(this._serializerOptions.limit, 10);
+    }
+    
+    // Enable overfetch if size > 0 and limit is set
+    if (this.options.overfetchSize > 0 && this._serializerOptions.limit) {
+      this.overfetchCache = new OverfetchCache(
+        this.qs,
+        this.options,
+        this.options.overfetchSize
+      );
+      
+      // Initialize the cache
+      this.overfetchCache.initialize().catch(err => {
+        console.error("Error initializing overfetch cache:", err);
+      });
+    }
+
     // Initialize the OperationsManager
     this.operationsManager = new OperationsManager(
       this.dataArray,
       this._notify.bind(this),
-      this.ModelClass
+      this.ModelClass,
+      this.overfetchCache
     );
   }
 
@@ -431,6 +455,36 @@ export class LiveQuerySet {
 
     // Refresh metrics if there were any active
     await this.refreshMetrics();
+
+    // Finally, refresh the overfetch cache
+    const overfetchSize = this.options.overfetchSize !== undefined ? 
+      this.options.overfetchSize : 
+      (this._serializerOptions.limit ? Math.min(this._serializerOptions.limit, 10) : 0);
+
+    const shouldHaveCache = overfetchSize > 0 && this._serializerOptions.limit != null;
+
+    // 2. Reset or create or remove cache as needed
+    if (shouldHaveCache) {
+      if (this.overfetchCache) {
+        // Reset existing cache
+        this.overfetchCache.reset({
+          newQs: this.qs,
+          newOptions: this.options,
+          newCacheSize: overfetchSize
+        });
+      } else {
+        // Create new cache
+        this.overfetchCache = new OverfetchCache(
+          this.qs,
+          this.options,
+          overfetchSize
+        );
+        this.overfetchCache.initialize();
+      }
+    } else {
+      // No cache needed
+      this.overfetchCache = null;
+    }
   }
 
   /**
@@ -600,45 +654,11 @@ export class LiveQuerySet {
             throw new Error(result?.error || "Delete failed");
           }
 
-          // Refetch new items to refill display if we have a limit
-          if (this._serializerOptions?.limit) {
-            try {
-              // Only fetch the number of items that were deleted
-              const newOptions = {
-                ...this._serializerOptions,
-                limit: deletedCount,
-                offset: this.dataArray.length
-              };
-              
-              // Fetch replacement items
-              const newItems = await this.qs.fetch(newOptions);
-              
-              if (newItems.length > 0) {
-                // Add the new items using the operations manager
-                this.operationsManager.insert(
-                  `${operationId}_refetch`,
-                  newItems,
-                  {
-                    position: "append",
-                    limit: this._serializerOptions.limit,
-                    fixedPageSize: false
-                  }
-                );
-              }
-            } catch (refetchError) {
-              console.warn("Error refetching items after delete:", refetchError);
-              // Continue with the delete operation even if refetch fails
-            }
-          }
-
           return deletedCount;
         } catch (error) {
           // Rollback using the operations manager
           this._notifyError(error, "delete");
           this.operationsManager.rollback(operationId);
-
-          // Also rollback any refetch operation if it was performed
-          this.operationsManager.rollback(`${operationId}_refetch`);
 
           // Re-throw to be caught by the outer try/catch
           throw error;
