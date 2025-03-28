@@ -14,7 +14,7 @@ import {
   DoesNotExist,
 } from "../flavours/django/errors.js";
 import MetricsManager from "./MetricsManager";
-import { updateArrayInPlace, refetchAfterDelete } from './utils.js';
+import { updateArrayInPlace } from './utils.js';
 import { OperationsManager } from "./operationsManager";
 import { OverfetchCache } from "./overfetchCache.js";
 
@@ -186,10 +186,15 @@ export const handleModelEvent = async (event) => {
 
     // Notify the overfetch cache about this event first
     if (lqs.overfetchCache) {
-      try {
-        lqs.overfetchCache.handleModelEvent(event.EventType, instances || [event.pkValue]);
-      } catch {
-        console.log(err)
+      try {        
+        // Get the relevant primary key(s)
+        const pkField = lqs.ModelClass.primaryKeyField;
+        const pkValues = isBulkEvent ? instances : event[pkField];
+        
+        // Handle the event in the cache
+        lqs.overfetchCache.handleModelEvent(cacheEventType, pkValues);
+      } catch (error) {
+        console.error("Error handling model event in overfetch cache:", error);
       }
     }
 
@@ -645,7 +650,7 @@ export class LiveQuerySet {
 
   /**
    * Deletes items matching the filter.
-   * @returns {Promise<number>} Number of deleted items
+   * @returns {Promise<void>}
    */
   async delete() {
     if (arguments.length > 0) {
@@ -663,15 +668,10 @@ export class LiveQuerySet {
           return 0; // Nothing to delete
         }
 
-        // Determine if this is a "bulk" delete based on the number of items
-        // (considering more than 1 item as a bulk operation)
-        const isBulkDelete = itemsToDelete.length > 1;
-
         // Use the operations manager to remove all items matching the filter
-        // Skip auto-refresh from cache for bulk deletes to avoid getting potentially stale items
         const deletedCount = this.operationsManager.remove(
           operationId,
-          this.filterFn,
+          this.filterFn
         );
 
         // If nothing was deleted, we're done
@@ -692,11 +692,6 @@ export class LiveQuerySet {
           // Verify the delete was successful
           if (!result || result.error) {
             throw new Error(result?.error || "Delete failed");
-          }
-          
-          // For bulk deletes, schedule a refetch in the background to get fresh replacement items
-          if (isBulkDelete) {
-            refetchAfterDelete(this, deletedCount, operationId);
           }
 
           return deletedCount;
@@ -982,19 +977,9 @@ export class LiveQuerySet {
 
     const deletedIdsSet = new Set(instanceIds);
 
-    // For bulk deletes, use the skipRefresh option to avoid immediate cache replacements
-    // This ensures we don't get stale items from the cache
-    let deletedCount = this.operationsManager.remove(
-      operationId, 
-      (item) => deletedIdsSet.has(item[pkField])
-    );
-    
-    // Use refetchAfterDelete to fetch fresh replacement items in the background
-    // This will run asynchronously and update the list when ready
-    refetchAfterDelete(
-      this,
-      deletedCount,
-      operationId
+    // Use the operations manager to remove items with matching IDs
+    this.operationsManager.remove(operationId, (item) =>
+      deletedIdsSet.has(item[pkField])
     );
   }
 
