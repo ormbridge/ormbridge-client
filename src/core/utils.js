@@ -52,29 +52,42 @@ export function updateArrayInPlace(sourceArray, targetArray, primaryKey = "id") 
 export async function refetchAfterDelete(liveQuerySet, deletedCount, operationId, isExternal = false) {
   // Only refetch if we have a limit configured
   if (!liveQuerySet._serializerOptions?.limit || deletedCount <= 0) {
-      return;
+    return;
   }
+
+  // If current data length is less than the limit, no need to refetch
+  // This means we're not at full page capacity yet
+  if (liveQuerySet.dataArray.length < liveQuerySet._serializerOptions.limit) {
+    return;
+  }
+
   try {
-      // Find the root queryset for refetching
-      const rootQs = liveQuerySet.parent ? liveQuerySet._findRootQuerySet() : liveQuerySet.qs;
-      // Only fetch the number of items that were deleted
-      const newOptions = {
-          ...liveQuerySet._serializerOptions,
-          limit: deletedCount,
-          offset: liveQuerySet.dataArray.length
-      };
-      // Fetch replacement items
-      const newItems = await rootQs.fetch(newOptions);
-      if (newItems.length > 0) {
-          // Add the new items using the operations manager
-          liveQuerySet.operationsManager.insert(`${operationId}_refetch`, newItems, {
-              position: "append",
-              limit: liveQuerySet._serializerOptions.limit,
-              fixedPageSize: false
-          });
-      }
-  }
-  catch (refetchError) {
-      console.warn("Error refetching items after delete:", refetchError);
+    // Find the root queryset for refetching
+    const rootQs = liveQuerySet.parent ? liveQuerySet._findRootQuerySet() : liveQuerySet.qs;
+
+    // Only fetch the number of items that were deleted
+    const newOptions = {
+      ...liveQuerySet._serializerOptions,
+      limit: deletedCount,
+      offset: liveQuerySet.dataArray.length
+    };
+    
+    // Fetch replacement items
+    const newItems = await rootQs.fetch(newOptions);
+    
+    if (newItems.length > 0) {
+      // Add the new items using the operations manager
+      liveQuerySet.operationsManager.insert(
+        `${operationId}_refetch`,
+        newItems,
+        {
+          position: "append",
+          limit: liveQuerySet._serializerOptions.limit,
+          fixedPageSize: false
+        }
+      );
+    }
+  } catch (refetchError) {
+    console.warn("Error refetching items after delete:", refetchError);
   }
 }
