@@ -171,7 +171,6 @@ export const handleModelEvent = async (event) => {
 
   // Process the event for each relevant LiveQuerySet
   for (const lqs of liveQuerySets) {
-    console.log(`handling for lqs with parent: ${lqs.parent}`)
     if (lqs.ModelClass.modelName !== model) continue;
 
     // Refresh metrics in every queryset, because they are usually different; log errors if any
@@ -184,6 +183,20 @@ export const handleModelEvent = async (event) => {
 
     // Skip handling if this is not the root liveqs
     if (lqs.parent) continue;
+
+    // Notify the overfetch cache about this event first
+    if (lqs.overfetchCache) {
+      try {        
+        // Get the relevant primary key(s)
+        const pkField = lqs.ModelClass.primaryKeyField;
+        const pkValues = isBulkEvent ? instances : event[pkField];
+        
+        // Handle the event in the cache
+        lqs.overfetchCache.handleModelEvent(cacheEventType, pkValues);
+      } catch (error) {
+        console.error("Error handling model event in overfetch cache:", error);
+      }
+    }
 
     const pkField = lqs.ModelClass.primaryKeyField;
     const isBulkEvent = [EventType.BULK_UPDATE, EventType.BULK_DELETE].includes(
@@ -328,6 +341,9 @@ export class LiveQuerySet {
           this.options,
           this.options.overfetchSize
         );
+
+        // Set the main data array reference
+        this.overfetchCache.setMainDataArray(this.dataArray);
         
         // Initialize the cache
         this.overfetchCache.initialize().catch(err => {

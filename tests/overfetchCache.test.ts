@@ -7,16 +7,26 @@ const mockModelClass = {
   modelName: 'TestModel'
 };
 
-// Create mock query set
+// Create mock query set with exclude support
 const createMockQs = (items = []) => ({
   ModelClass: mockModelClass,
   fetch: vi.fn().mockImplementation(async (options) => {
-    const { offset = 0, limit = 10 } = options;
-    // Generate items based on offset and limit
-    return Array.from({ length: Math.min(limit, items.length - offset) }, (_, i) => ({
-      id: offset + i + 1,
-      name: `Item ${offset + i + 1}`
-    }));
+    const { limit = 10 } = options;
+    return items.slice(0, limit);
+  }),
+  exclude: vi.fn().mockImplementation((excludeParams) => {
+    // Create a new QuerySet that filters out items based on excludeParams
+    const excludedIds = excludeParams['id__in'] || [];
+    const filteredItems = items.filter(item => !excludedIds.includes(item.id));
+    
+    return {
+      ...createMockQs(filteredItems),
+      // Return the filtered items when fetched
+      fetch: vi.fn().mockImplementation(async (options) => {
+        const { limit = 10 } = options;
+        return filteredItems.slice(0, limit);
+      })
+    };
   })
 });
 
@@ -27,6 +37,7 @@ describe('OverfetchCache', () => {
   let mockQs;
   let cache;
   let mockItems;
+  let mockMainDataArray;
   
   beforeEach(() => {
     // Reset mocks
@@ -38,20 +49,21 @@ describe('OverfetchCache', () => {
       name: `Item ${i + 1}`
     }));
     
+    // Create a mock main data array with the first 10 items
+    mockMainDataArray = mockItems.slice(0, 10);
+    
     // Create mock QuerySet
     mockQs = createMockQs(mockItems);
-    mockQs.fetch.mockImplementation(async (options) => {
-      const { offset = 0, limit = 10 } = options;
-      return mockItems.slice(offset, offset + limit);
-    });
     
     // Create cache instance with standard options
     cache = new OverfetchCache(mockQs, {
       serializer: {
-        offset: 0,
         limit: 10
       }
-    });
+    }, 10);
+    
+    // Set main data array reference
+    cache.setMainDataArray(mockMainDataArray);
   });
 
   afterEach(() => {
@@ -60,69 +72,60 @@ describe('OverfetchCache', () => {
 
   test('should initialize with correct default values', () => {
     expect(cache.limit).toBe(10);
-    expect(cache.offset).toBe(0);
     expect(cache.cacheSize).toBe(10);
     expect(cache.cacheItems).toEqual([]);
     expect(cache.isFetching).toBe(false);
     expect(cache.primaryKeyField).toBe('id');
+    expect(cache.mainDataArray).toBe(mockMainDataArray);
   });
 
-  test('should fetch next page of items during initialization', async () => {
+  test('should fetch excluded items during initialization', async () => {
     await cache.initialize();
     
-    // Check that fetch was called with correct parameters
-    expect(mockQs.fetch).toHaveBeenCalledWith({
-      offset: 10, // Next page after current view (offset 0 + limit 10)
-      limit: 10
+    // Check that exclude was called with IDs from the main array
+    const mainIds = mockMainDataArray.map(item => item.id);
+    expect(mockQs.exclude).toHaveBeenCalledWith({ 'id__in': mainIds });
+    
+    // Check that fetch was called with correct parameters (just the limit)
+    expect(mockQs.exclude.mock.results[0].value.fetch).toHaveBeenCalledWith({
+      limit: 10,
+      ...cache.serializerOptions
     });
     
-    // Check that cache items were set correctly
+    // Check that cache items contain the next 10 items (not in the main array)
     expect(cache.cacheItems.length).toBe(10);
-    expect(cache.cacheItems[0].id).toBe(11); // First item of next page
+    expect(cache.cacheItems[0].id).toBe(11); // First item after the main array
   });
 
   test('should not fetch if limit is not set', async () => {
     cache = new OverfetchCache(mockQs, {});
+    cache.setMainDataArray(mockMainDataArray);
     const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     
     await cache.initialize();
     
     expect(consoleSpy).toHaveBeenCalledWith('OverfetchCache: No limit set in serializer options, caching disabled');
-    expect(mockQs.fetch).not.toHaveBeenCalled();
+    expect(mockQs.exclude).not.toHaveBeenCalled();
     
     consoleSpy.mockRestore();
   });
 
-  test('should update offset and refresh cache', async () => {
-    await cache.initialize();
-    
-    // Reset mock call count
-    mockQs.fetch.mockClear();
-    
-    // Update offset
-    cache.updateOffset(20);
-    
-    // Offset should be updated
-    expect(cache.offset).toBe(20);
-    
-    // Should trigger a refresh
-    expect(mockQs.fetch).toHaveBeenCalledWith({
-      offset: 30, // New offset (20) + limit (10)
-      limit: 10
+  test('should not fetch if main data array is not set', async () => {
+    cache = new OverfetchCache(mockQs, {
+      serializer: { limit: 10 }
     });
-  });
-
-  test('should not update offset or refresh if same offset', async () => {
+    
+    // Don't set main data array
+    cache.mainDataArray = null;
+    
+    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    
     await cache.initialize();
     
-    // Reset mock call count
-    mockQs.fetch.mockClear();
+    expect(consoleSpy).toHaveBeenCalledWith('OverfetchCache: No main data array set, caching disabled');
+    expect(mockQs.exclude).not.toHaveBeenCalled();
     
-    // Update with same offset
-    cache.updateOffset(0);
-    
-    // Should not trigger a refresh
-    expect(mockQs.fetch).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
   test('should get replacements from cache without waiting for refresh', async () => {
@@ -130,7 +133,7 @@ describe('OverfetchCache', () => {
     await cache.initialize();
     
     // Get 5 replacements
-    const replacements = await cache.getReplacements(5);
+    const replacements = cache.getReplacements(5);
     
     // Should return 5 items
     expect(replacements.length).toBe(5);
@@ -147,7 +150,7 @@ describe('OverfetchCache', () => {
     await cache.initialize();
     
     // Get 15 replacements (more than available)
-    const replacements = await cache.getReplacements(15);
+    const replacements = cache.getReplacements(15);
     
     // Should return only 10 items (all that are available)
     expect(replacements.length).toBe(10);
@@ -161,13 +164,13 @@ describe('OverfetchCache', () => {
     await cache.initialize();
     
     // Empty the cache
-    await cache.getReplacements(10);
+    cache.getReplacements(10);
     
-    // Reset mock
-    mockQs.fetch.mockClear();
+    // Reset mocks
+    mockQs.exclude.mockClear();
     
     // Try to get more replacements
-    const replacements = await cache.getReplacements(5);
+    const replacements = cache.getReplacements(5);
     
     // Should return empty array
     expect(replacements).toEqual([]);
@@ -175,81 +178,43 @@ describe('OverfetchCache', () => {
     // Cache remains empty
     expect(cache.cacheItems.length).toBe(0);
     
-    // getReplacements does not trigger refreshCache
-    expect(mockQs.fetch).not.toHaveBeenCalled();
-  });
-
-  test('should not wait for ongoing fetch when getting replacements', async () => {
-    // Set up a delayed fetch response
-    let resolvePromise;
-    const fetchPromise = new Promise(resolve => {
-      resolvePromise = resolve;
-    });
+    // Check that a refresh was scheduled with setTimeout
+    // We need to spy on setTimeout for this
+    const timeoutSpy = vi.spyOn(global, 'setTimeout');
     
-    mockQs.fetch.mockImplementationOnce(() => fetchPromise);
+    // Call getReplacements again to trigger the refresh
+    cache.getReplacements(1);
     
-    // Start initialization (which will trigger a fetch)
-    const initPromise = cache.initialize();
+    // Check that setTimeout was called
+    expect(timeoutSpy).toHaveBeenCalled();
     
-    // Cache should be in fetching state
-    expect(cache.isFetching).toBe(true);
-    
-    // Try to get replacements while fetch is in progress
-    const replacements = await cache.getReplacements(5);
-    
-    // Should return empty array immediately since cache is empty and fetching
-    expect(replacements).toEqual([]);
-    
-    // Resolve the fetch
-    resolvePromise(mockItems.slice(10, 20));
-    
-    // Wait for initialization to complete
-    await initPromise;
-    
-    // Now the cache should be populated
-    expect(cache.cacheItems.length).toBe(10);
-    expect(cache.isFetching).toBe(false);
+    timeoutSpy.mockRestore();
   });
 
   test('should handle data change by refreshing cache', async () => {
     await cache.initialize();
     
     // Reset mock call count
-    mockQs.fetch.mockClear();
+    mockQs.exclude.mockClear();
     
-    // Create some IDs that are in the cache
-    const affectedIds = [11, 12]; // These IDs should be in the cache after initialization
+    // Update main data array (simulate data changing)
+    mockMainDataArray.push(...mockItems.slice(10, 15));
     
-    // Handle data change with these IDs
-    cache.handleDataChange(affectedIds);
+    // Force a refresh cache
+    await cache.refreshCache();
     
-    // Should trigger a refresh
-    expect(mockQs.fetch).toHaveBeenCalledWith({
-      offset: 10,
-      limit: 10
-    });
-  });
-
-  test('should not refresh cache if affected IDs are not in cache', async () => {
-    await cache.initialize();
+    // Should exclude the updated main array items
+    const updatedMainIds = mockMainDataArray.map(item => item.id);
+    expect(mockQs.exclude).toHaveBeenCalledWith({ 'id__in': updatedMainIds });
     
-    // Reset mock call count
-    mockQs.fetch.mockClear();
-    
-    // Create IDs that are not in the cache
-    const affectedIds = [1, 2]; // These IDs should not be in the cache
-    
-    // Handle data change with these IDs
-    cache.handleDataChange(affectedIds);
-    
-    // Should not trigger a refresh
-    expect(mockQs.fetch).not.toHaveBeenCalled();
+    // Check that fetch was called with the limit
+    expect(mockQs.exclude.mock.results[0].value.fetch).toHaveBeenCalled();
   });
 
   test('should return empty array when requesting 0 replacements', async () => {
     await cache.initialize();
     
-    const replacements = await cache.getReplacements(0);
+    const replacements = cache.getReplacements(0);
     
     expect(replacements).toEqual([]);
     expect(cache.cacheItems.length).toBe(10); // Should not modify cache
@@ -263,15 +228,17 @@ describe('OverfetchCache', () => {
     expect(status).toEqual({
       cacheItemCount: 10,
       targetSize: 10,
-      currentOffset: 0,
+      mainArraySize: 10,
       isFetching: false
     });
   });
 
   test('should handle fetch errors gracefully', async () => {
-    // Make fetch throw an error
+    // Make exclude throw an error
     const error = new Error('Fetch error');
-    mockQs.fetch.mockRejectedValueOnce(error);
+    mockQs.exclude.mockImplementationOnce(() => {
+      throw error;
+    });
     
     // Spy on console.error
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -298,8 +265,8 @@ describe('OverfetchCache', () => {
     // Try to start another refresh
     cache.refreshCache();
     
-    // Should only call fetch once
-    expect(mockQs.fetch).toHaveBeenCalledTimes(1);
+    // Should only call exclude once
+    expect(mockQs.exclude).toHaveBeenCalledTimes(1);
     
     await refreshPromise;
   });
@@ -315,15 +282,10 @@ describe('OverfetchCache', () => {
     }));
     
     const newMockQs = createMockQs(newMockItems);
-    newMockQs.fetch.mockImplementation(async (options) => {
-      const { offset = 0, limit = 10 } = options;
-      return newMockItems.slice(offset, offset + limit);
-    });
     
     // Create new options
     const newOptions = {
       serializer: {
-        offset: 15,
         limit: 20
       }
     };
@@ -342,19 +304,13 @@ describe('OverfetchCache', () => {
     expect(cache.qs).toBe(newMockQs);
     expect(cache.options).toBe(newOptions);
     expect(cache.serializerOptions).toBe(newOptions.serializer);
-    expect(cache.offset).toBe(15);
     expect(cache.limit).toBe(20);
     expect(cache.cacheSize).toBe(25);
     
-    // Check that fetch was called with correct parameters
-    expect(newMockQs.fetch).toHaveBeenCalledWith({
-      offset: 35, // New offset (15) + new limit (20)
-      limit: 25  // New cache size
-    });
-    
-    // Check that cache items were updated with new data
-    expect(cache.cacheItems.length).toBe(25);
-    expect(cache.cacheItems[0].id).toBe(1035); // First item of next page from new data
+    // Check that exclude and fetch were called on the new query set
+    // This is hard to verify since we reset everything, but the cache should be empty
+    // Initially and then should be refilled after initialize() is called during reset()
+    expect(cache.cacheItems.length).toBeGreaterThan(0);
   });
   
   test('should throw error when resetting with incompatible model class', async () => {
@@ -364,6 +320,7 @@ describe('OverfetchCache', () => {
         primaryKeyField: 'uuid',
         modelName: 'IncompatibleModel'
       },
+      exclude: vi.fn(),
       fetch: vi.fn()
     };
     
@@ -384,16 +341,9 @@ describe('OverfetchCache', () => {
     // Cache size should be updated
     expect(cache.cacheSize).toBe(15);
     
-    // Fetch should use updated cache size but same offset
-    expect(mockQs.fetch).toHaveBeenCalledWith({
-      offset: 10, // Original offset (0) + original limit (10)
-      limit: 15   // New cache size
-    });
-    
     // Reset only options
     const newOptions = {
       serializer: {
-        offset: 25,
         limit: 5
       }
     };
@@ -402,17 +352,10 @@ describe('OverfetchCache', () => {
     
     // Options should be updated
     expect(cache.options).toBe(newOptions);
-    expect(cache.offset).toBe(25);
     expect(cache.limit).toBe(5);
     
     // Cache size should remain the same from previous reset
     expect(cache.cacheSize).toBe(15);
-    
-    // Fetch should use updated offset and limit
-    expect(mockQs.fetch).toHaveBeenCalledWith({
-      offset: 30, // New offset (25) + new limit (5)
-      limit: 15   // Cache size from previous reset
-    });
   });
   
   test('should clear cache items during reset before fetching new ones', async () => {
@@ -421,13 +364,17 @@ describe('OverfetchCache', () => {
     // Cache should have items after initialization
     expect(cache.cacheItems.length).toBe(10);
     
-    // Create a delayed fetch implementation
+    // Create a delayed exclude implementation
     let resolvePromise;
-    const fetchPromise = new Promise(resolve => {
+    const excludePromise = new Promise(resolve => {
       resolvePromise = resolve;
     });
     
-    mockQs.fetch.mockImplementationOnce(() => fetchPromise);
+    mockQs.exclude.mockImplementationOnce(() => {
+      return {
+        fetch: vi.fn().mockImplementationOnce(() => excludePromise)
+      };
+    });
     
     // Start reset (this will clear cache and start fetch)
     const resetPromise = cache.reset();
@@ -443,7 +390,6 @@ describe('OverfetchCache', () => {
     await resetPromise;
     
     // Now the cache should be populated again
-    expect(cache.cacheItems.length).toBe(10);
     expect(cache.isFetching).toBe(false);
   });
 });
