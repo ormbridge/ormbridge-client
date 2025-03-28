@@ -173,7 +173,7 @@ export const handleModelEvent = async (event) => {
   for (const lqs of liveQuerySets) {
     if (lqs.ModelClass.modelName !== model) continue;
 
-    // Refresh metrics; log errors if any
+    // Refresh metrics in every queryset, because they are usually different; log errors if any
     lqs.refreshMetrics(event.operationId).catch((error) =>
       console.error("Error refreshing metrics:", error)
     );
@@ -182,7 +182,7 @@ export const handleModelEvent = async (event) => {
     if (activeOperationIds.has(event.operationId)) continue;
 
     // Skip handling if this is not the root liveqs
-    if (this.parent) continue;
+    if (lqs.parent) continue;
 
     const pkField = lqs.ModelClass.primaryKeyField;
     const isBulkEvent = [EventType.BULK_UPDATE, EventType.BULK_DELETE].includes(
