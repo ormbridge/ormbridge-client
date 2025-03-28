@@ -133,7 +133,7 @@ export class OperationsManager {
    */
   remove(operationId, filterFn) {
     let removeCount = 0;
-
+  
     const success = this.applyMutation(operationId, draft => {
       for (let i = draft.length - 1; i >= 0; i--) {
         if (filterFn(draft[i])) {
@@ -142,19 +142,25 @@ export class OperationsManager {
         }
       }
     }, "delete");
-
+  
     // If items were removed and we have a cache, get replacements
     if (success && removeCount > 0 && this.overfetchCache) {
       // Get replacement items from cache
       const replacements = this.overfetchCache.getReplacements(removeCount);
       if (replacements.length > 0) {
         const createSuccess = this.applyMutation(operationId, draft => {
-          // Insert replacement items – here we push them at the end.
-          draft.push(...replacements);
+          // Filter out any replacement items that already exist in the data array
+          const existingIds = new Set(draft.map(item => item.id));
+          const uniqueReplacements = replacements.filter(item => !existingIds.has(item.id));
+          
+          // Insert unique replacement items – here we push them at the end.
+          if (uniqueReplacements.length > 0) {
+            draft.push(...uniqueReplacements);
+          }
         }, "create");
       }
     }
-
+  
     return success ? removeCount : 0;
   }
   
