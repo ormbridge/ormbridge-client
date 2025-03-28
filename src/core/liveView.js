@@ -603,9 +603,6 @@ export class LiveQuerySet {
           // Refetch new items to refill display if we have a limit
           if (this._serializerOptions?.limit) {
             try {
-              // Find the root queryset for refetching
-              const rootQs = this.parent ? this._findRootQuerySet() : this.qs;
-
               // Only fetch the number of items that were deleted
               const newOptions = {
                 ...this._serializerOptions,
@@ -614,8 +611,7 @@ export class LiveQuerySet {
               };
               
               // Fetch replacement items
-              let newItems = await rootQs.fetch(newOptions);
-              console.log(`fetched items: ${JSON.stringify(newItems)}}`)
+              const newItems = await this.qs.fetch(newOptions);
               
               if (newItems.length > 0) {
                 // Add the new items using the operations manager
@@ -631,6 +627,7 @@ export class LiveQuerySet {
               }
             } catch (refetchError) {
               console.warn("Error refetching items after delete:", refetchError);
+              // Continue with the delete operation even if refetch fails
             }
           }
 
@@ -1112,23 +1109,6 @@ export class LiveQuerySet {
       this.createMetricFn,
       field
     );
-  }
-
-  /**
-   * Helper method to find the root queryset
-   * Traverses the parent chain to find the top-level LiveQuerySet
-   * @returns {QuerySet} The root queryset
-   * @private
-   */
-  _findRootQuerySet() {
-    let current = this;
-    
-    // Traverse up the parent chain until we reach the root
-    while (current.parent) {
-      current = current.parent;
-    }
-    
-    return current.qs;
   }
 }
 // --------------------
