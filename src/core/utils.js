@@ -46,40 +46,44 @@ export function updateArrayInPlace(sourceArray, targetArray, primaryKey = "id") 
  * @param {LiveQuerySet} liveQuerySet - The LiveQuerySet instance.
  * @param {number} deletedCount - Number of deleted items to replace.
  * @param {string} operationId - Operation identifier for tracking.
- * @param {Array} existingIds - Array of primary key values already present that should be excluded.
- * @param {boolean} [isExternal=false] - Whether this is an external delete operation.
  * @returns {Promise<void>}
  */
-export async function refetchAfterDelete(liveQuerySet, deletedCount, operationId, existingIds, isExternal = false) {
+export async function refetchAfterDelete(liveQuerySet, deletedCount, operationId) {
   // Only refetch if we have a limit configured and a positive deleted count
   if (!liveQuerySet._serializerOptions?.limit || deletedCount <= 0) {
-      return;
+    return;
   }
+  
   try {
-      // Find the root queryset for refetching
-      const rootQs = liveQuerySet.parent ? liveQuerySet._findRootQuerySet() : liveQuerySet.qs;
-      // Get primary key field name (defaulting to "id")
-      const pkField = liveQuerySet.ModelClass.primaryKeyField || "id";
-      // Build serializer options with a limit of deletedCount
-      const serializerOptions = {
-          ...liveQuerySet._serializerOptions,
-          limit: deletedCount,
-      };
-      // Use the ORM's built in exclude behavior to exclude existing IDs
-      const newItems = await rootQs
-          .exclude({ [`${pkField}__in`]: existingIds })
-          .fetch(serializerOptions);
-          
-      if (newItems.length > 0) {
-          // Insert the new items using the operations manager
-          liveQuerySet.operationsManager.insert(`${operationId}_refetch`, newItems, {
-              position: "append",
-              limit: liveQuerySet._serializerOptions.limit,
-              fixedPageSize: false
-          });
-      }
-  }
-  catch (refetchError) {
-      console.warn("Error refetching items after delete:", refetchError);
+    // Get the primary key field name
+    const pkField = liveQuerySet.ModelClass.primaryKeyField || "id";
+    
+    // Get existing IDs from the current data array
+    const existingIds = liveQuerySet.dataArray.map(item => item[pkField]);
+    
+    // Find the root queryset for refetching
+    const rootQs = liveQuerySet.parent ? liveQuerySet._findRootQuerySet() : liveQuerySet.qs;
+    
+    // Build serializer options with a limit of deletedCount
+    const serializerOptions = {
+      ...liveQuerySet._serializerOptions,
+      limit: deletedCount,
+    };
+    
+    // Use the ORM's built-in exclude behavior to exclude existing IDs
+    const newItems = await rootQs
+      .exclude({ [`${pkField}__in`]: existingIds })
+      .fetch(serializerOptions);
+    
+    if (newItems.length > 0) {
+      // Insert the new items using the operations manager
+      liveQuerySet.operationsManager.insert(`${operationId}_refetch`, newItems, {
+        position: "append",
+        limit: liveQuerySet._serializerOptions.limit,
+        fixedPageSize: false
+      });
+    }
+  } catch (refetchError) {
+    console.warn("Error refetching items after delete:", refetchError);
   }
 }

@@ -192,7 +192,7 @@ export const handleModelEvent = async (event) => {
         const pkValues = isBulkEvent ? instances : event[pkField];
         
         // Handle the event in the cache
-        await lqs.overfetchCache.handleModelEvent(cacheEventType, pkValues);
+        lqs.overfetchCache.handleModelEvent(cacheEventType, pkValues);
       } catch (error) {
         console.error("Error handling model event in overfetch cache:", error);
       }
@@ -650,7 +650,7 @@ export class LiveQuerySet {
 
   /**
    * Deletes items matching the filter.
-   * @returns {Promise<void>}
+   * @returns {Promise<number>} Number of deleted items
    */
   async delete() {
     if (arguments.length > 0) {
@@ -668,10 +668,16 @@ export class LiveQuerySet {
           return 0; // Nothing to delete
         }
 
+        // Determine if this is a "bulk" delete based on the number of items
+        // (considering more than 1 item as a bulk operation)
+        const isBulkDelete = itemsToDelete.length > 1;
+
         // Use the operations manager to remove all items matching the filter
+        // Skip auto-refresh from cache for bulk deletes to avoid getting potentially stale items
         const deletedCount = this.operationsManager.remove(
           operationId,
-          this.filterFn
+          this.filterFn,
+          { skipRefresh: isBulkDelete }
         );
 
         // If nothing was deleted, we're done
@@ -692,6 +698,11 @@ export class LiveQuerySet {
           // Verify the delete was successful
           if (!result || result.error) {
             throw new Error(result?.error || "Delete failed");
+          }
+          
+          // For bulk deletes, schedule a refetch in the background to get fresh replacement items
+          if (isBulkDelete) {
+            refetchAfterDelete(this, deletedCount, operationId);
           }
 
           return deletedCount;
@@ -977,9 +988,20 @@ export class LiveQuerySet {
 
     const deletedIdsSet = new Set(instanceIds);
 
-    // Use the operations manager to remove items with matching IDs
-    this.operationsManager.remove(operationId, (item) =>
-      deletedIdsSet.has(item[pkField])
+    // For bulk deletes, use the skipRefresh option to avoid immediate cache replacements
+    // This ensures we don't get stale items from the cache
+    let deletedCount = this.operationsManager.remove(
+      operationId, 
+      (item) => deletedIdsSet.has(item[pkField]),
+      { skipRefresh: true }
+    );
+    
+    // Use refetchAfterDelete to fetch fresh replacement items in the background
+    // This will run asynchronously and update the list when ready
+    refetchAfterDelete(
+      this,
+      deletedCount,
+      operationId
     );
   }
 
