@@ -419,6 +419,8 @@ export class LiveQuerySet {
   async removeGhosts() {
     const pkField = this.ModelClass.primaryKeyField || "id";
     if (this.dataArray.length === 0) return [];
+
+    removedCount = 0;
     
     const operationId = `remove_ghosts`; // not needed
     const remoteItems = await this._findRootQuerySet().fetch({ fields: [pkField], limit: null });
