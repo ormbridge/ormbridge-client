@@ -14,7 +14,7 @@ import {
   DoesNotExist,
 } from "../flavours/django/errors.js";
 import MetricsManager from "./MetricsManager";
-import { updateArrayInPlace, refetchAfterDelete } from './utils.js';
+import { updateArrayInPlace } from './utils.js';
 import { OperationsManager } from "./operationsManager";
 import { OverfetchCache } from "./overfetchCache.js";
 
@@ -184,6 +184,15 @@ export const handleModelEvent = async (event) => {
     // Skip handling if this is not the root liveqs
     if (lqs.parent) continue;
 
+    // Notify the overfetch cache about this event first
+    if (lqs.overfetchCache) {
+      try {
+        lqs.overfetchCache.handleModelEvent(event.EventType, instances || [event.pkValue]);
+      } catch {
+        console.log(err)
+      }
+    }
+
     const pkField = lqs.ModelClass.primaryKeyField;
     const isBulkEvent = [EventType.BULK_UPDATE, EventType.BULK_DELETE].includes(
       normalizedEventType
@@ -204,42 +213,27 @@ export const handleModelEvent = async (event) => {
           const pkValue = event[pkField];
           const createModel = await lqs.qs.get({ [pkField]: pkValue });
           lqs.handleExternalCreateEvent(createModel, event.operationId);
-          if (lqs.overfetchCache){
-            lqs.overfetchCache.handleModelEvent(event.eventType, pkValue);
-          }
           break;
         }
         case EventType.UPDATE: {
           const pkValue = event[pkField];
           const updateModel = await lqs.qs.first({ [pkField]: pkValue });
           lqs.handleExternalUpdateEvent(updateModel, event.operationId, pkValue);
-          if (lqs.overfetchCache){
-            lqs.overfetchCache.handleModelEvent(event.eventType, pkValue);
-          }
           break;
         }
         case EventType.DELETE: {
           const pkValue = event[pkField];
           lqs.handleExternalDeleteEvent(pkValue, event.operationId);
-          if (lqs.overfetchCache){
-            lqs.overfetchCache.handleModelEvent(event.eventType, pkValue);
-          }
           break;
         }
         case EventType.BULK_UPDATE: {
           const fieldName = pk_field_name || pkField;
           await lqs.handleExternalBulkUpdateEvent(instances, fieldName, event.operationId);
-          if (lqs.overfetchCache){
-            lqs.overfetchCache.handleModelEvent(event.eventType, instances);
-          }
           break;
         }
         case EventType.BULK_DELETE: {
           const fieldName = pk_field_name || pkField;
           lqs.handleExternalBulkDeleteEvent(instances, fieldName, event.operationId);
-          if (lqs.overfetchCache){
-            lqs.overfetchCache.handleModelEvent(event.eventType, instances);
-          }
           break;
         }
       }

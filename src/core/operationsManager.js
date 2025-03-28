@@ -129,13 +129,11 @@ export class OperationsManager {
    *
    * @param {string} operationId - Caller-supplied ID for the operation
    * @param {Function} filterFn - Function to determine which items to remove
-   * @param {Object} [options] - Additional options
-   * @param {boolean} [options.skipRefresh=false] - Whether to skip auto-refresh for this operation
    * @returns {number} Count of removed items
    */
-  remove(operationId, filterFn, { skipRefresh = false } = {}) {
+  remove(operationId, filterFn) {
     let removeCount = 0;
-
+  
     const success = this.applyMutation(operationId, draft => {
       for (let i = draft.length - 1; i >= 0; i--) {
         if (filterFn(draft[i])) {
@@ -144,9 +142,9 @@ export class OperationsManager {
         }
       }
     }, "delete");
-
+  
     // If items were removed and we have a cache, get replacements
-    if (success && removeCount > 0 && this.overfetchCache && this.autoRefresh && !skipRefresh) {
+    if (success && removeCount > 0 && this.overfetchCache) {
       // Get replacement items from cache
       const replacements = this.overfetchCache.getReplacements(removeCount);
       if (replacements.length > 0) {
@@ -163,10 +161,10 @@ export class OperationsManager {
         }, "create");
       }
     }
-
+  
     return success ? removeCount : 0;
   }
-    
+  
   /**
    * Rolls back an operation by applying its inverse patches
    *
