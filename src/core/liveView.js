@@ -181,6 +181,9 @@ export const handleModelEvent = async (event) => {
     // Skip handling if this event was initiated by this operation
     if (activeOperationIds.has(event.operationId)) continue;
 
+    // Skip updating the remaining events if the qs isn't the root
+    if (lqs._findRootQuerySet()) return;
+
     const pkField = lqs.ModelClass.primaryKeyField;
     const isBulkEvent = [EventType.BULK_UPDATE, EventType.BULK_DELETE].includes(
       normalizedEventType
