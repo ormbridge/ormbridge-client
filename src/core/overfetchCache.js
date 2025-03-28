@@ -124,7 +124,7 @@ export class OverfetchCache {
       if (eventType === EventType.DELETE){
         // Immediately filter out the deleted items from the cache
         this.cacheItems = this.cacheItems.filter(
-          item => !pkSet.has(item[this.primaryKeyField])
+          item => !new Set(pkSet).has(item[this.primaryKeyField])
         );
       }
       
