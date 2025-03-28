@@ -420,7 +420,7 @@ export class LiveQuerySet {
     const pkField = this.ModelClass.primaryKeyField || "id";
     if (this.dataArray.length === 0) return [];
 
-    const removedCount = 0;
+    let removedCount = 0;
     
     const operationId = `remove_ghosts`; // not needed
     const remoteItems = await this._findRootQuerySet().fetch({ fields: [pkField], limit: null });
