@@ -265,7 +265,8 @@ export class LiveQuerySet {
     filterConditions,
     createMetricFn,
     parent,
-    createdItems
+    createdItems,
+
   ) {
     this.qs = qs;
     this.dataArray = dataArray;
@@ -309,16 +310,18 @@ export class LiveQuerySet {
     this.callbacks = [];
     this.errorCallbacks = [];
 
-    // Initialize the OverfetchCache if overfetchSize is > 0 and pagination is enabled
-    this.overfetchCache = null;
-    
-    // Set default overfetchSize if not specified
-    if (this.options.overfetchSize === undefined && this._serializerOptions.limit) {
-      this.options.overfetchSize = Math.min(this._serializerOptions.limit, 10);
-    }
-    
-    if (!this.parent){
-      // Enable overfetch if size > 0 and limit is set
+    if (this.parent){
+      this.overfetchCache = this.parent.overfetchCache
+      this.operationsManager = this.parent.operationsManager
+    } else {
+      // Initialize the OverfetchCache if overfetchSize is > 0 and pagination is enabled
+      this.overfetchCache = null;
+      
+      // Set default overfetchSize if not specified
+      if (this.options.overfetchSize === undefined && this._serializerOptions.limit) {
+        this.options.overfetchSize = Math.min(this._serializerOptions.limit, 10);
+      }
+      
       if (this.options.overfetchSize > 0 && this._serializerOptions.limit) {
         this.overfetchCache = new OverfetchCache(
           this._findRootQuerySet(),
@@ -331,17 +334,15 @@ export class LiveQuerySet {
           console.error("Error initializing overfetch cache:", err);
         });
       }
-    } else {
-      this.overfetchCache = parent.overfetchCache
-    }
 
-    // Initialize the OperationsManager
-    this.operationsManager = new OperationsManager(
-      this.dataArray,
-      this._notify.bind(this),
-      this.ModelClass,
-      this.overfetchCache
-    );
+      // Initialize the OperationsManager
+      this.operationsManager = new OperationsManager(
+        this.dataArray,
+        this._notify.bind(this),
+        this.ModelClass,
+        this.overfetchCache
+      );
+    }
   }
 
   /**

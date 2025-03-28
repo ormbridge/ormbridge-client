@@ -172,9 +172,9 @@ export class OperationsManager {
    * @returns {boolean} Whether the rollback was successful
    */
   rollback(operationId) {
-    const operation = this.operationPatches.get(operationId);
-    if (!operation) return false;
-
+    const operations = this.operationPatches.get(operationId);
+    if (!operations) return false;
+  
     try {
       let currentState = this.dataArray;
       // Roll back each operation in reverse order
