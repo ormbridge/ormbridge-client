@@ -187,10 +187,9 @@ export function useLiveView(queryInput, options = {}, deps = []) {
     };
   }, effectDeps);
   
-  // Return reactive objects
   return {
     data,
-    query,
+    query: liveQueryRef.current,
     isLoading
   };
 }
