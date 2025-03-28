@@ -37,9 +37,5 @@ export interface SerializerOptions {
      * Serializer options.
      */
     serializer?: SerializerOptions;
-    /**
-     * Overfetch size - this is a cache of items that is maintained in sync with the db to immediately replace deleted items
-     */
-    overfetchSize?: number;
   }
   
