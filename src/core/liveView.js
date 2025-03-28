@@ -420,7 +420,7 @@ export class LiveQuerySet {
     const pkField = this.ModelClass.primaryKeyField || "id";
     if (this.dataArray.length === 0) return [];
 
-    removedCount = 0;
+    const removedCount = 0;
     
     const operationId = `remove_ghosts`; // not needed
     const remoteItems = await this._findRootQuerySet().fetch({ fields: [pkField], limit: null });
@@ -431,7 +431,7 @@ export class LiveQuerySet {
     );
     
     if (ghostItems.length > 0) {
-      const removedCount = this.operationsManager.remove(operationId, 
+      removedCount = this.operationsManager.remove(operationId, 
         item => !remotePkSet.has(item[pkField]) && !this.createdItems.has(item[pkField])
       );
     }
