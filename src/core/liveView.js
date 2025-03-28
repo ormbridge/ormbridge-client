@@ -189,10 +189,10 @@ export const handleModelEvent = async (event) => {
       try {        
         // Get the relevant primary key(s)
         const pkField = lqs.ModelClass.primaryKeyField;
-        const pkValues = isBulkEvent ? instances : event[pkField];
+        const pkValues = instances || event[pkField];
         
         // Handle the event in the cache
-        lqs.overfetchCache.handleModelEvent(cacheEventType, pkValues);
+        lqs.overfetchCache.handleModelEvent(event.type, pkValues);
       } catch (error) {
         console.error("Error handling model event in overfetch cache:", error);
       }
@@ -410,6 +410,31 @@ export class LiveQuerySet {
     if (operationId) {
       this.optimisticMetricsApplied.add(operationId);
     }
+  }
+  
+  /**
+   * Removes local items that no longer exist in the remote dataset.
+   * @returns {Promise<Array>} Array of removed ghost items
+   */
+  async removeGhosts() {
+    const pkField = this.ModelClass.primaryKeyField || "id";
+    if (this.dataArray.length === 0) return [];
+    
+    const operationId = `remove_ghosts`; // not needed
+    const remoteItems = await this._findRootQuerySet().fetch({ fields: [pkField], limit: null });
+    const remotePkSet = new Set(remoteItems.map(item => item[pkField]));
+    
+    const ghostItems = this.dataArray.filter(item => 
+      !remotePkSet.has(item[pkField]) && !this.createdItems.has(item[pkField])
+    );
+    
+    if (ghostItems.length > 0) {
+      const removedCount = this.operationsManager.remove(operationId, 
+        item => !remotePkSet.has(item[pkField]) && !this.createdItems.has(item[pkField])
+      );
+    }
+    
+    return removedCount;
   }
 
   /**
@@ -659,55 +684,60 @@ export class LiveQuerySet {
       );
     }
 
-    try {
-      return await withOperationId(async (operationId) => {
-        // Get the items to be deleted for proper rollback
-        const itemsToDelete = this.dataArray.filter(this.filterFn);
+    return await withOperationId(async (operationId) => {
+      // Get the items to be deleted for proper rollback
+      const itemsToDelete = this.dataArray.filter(this.filterFn);
 
-        if (itemsToDelete.length === 0) {
-          return 0; // Nothing to delete
-        }
+      if (itemsToDelete.length === 0) {
+        return 0; // Nothing to delete
+      }
 
-        // Use the operations manager to remove all items matching the filter
-        const deletedCount = this.operationsManager.remove(
-          operationId,
-          this.filterFn
+      // Use the operations manager to remove all items matching the filter
+      const deletedCount = this.operationsManager.remove(
+        operationId,
+        this.filterFn
+      );
+
+      // If nothing was deleted, we're done
+      if (deletedCount === 0) {
+        return 0;
+      }
+
+      try {
+        // Execute delete operation on the server and ensure we await it
+        const result = await this.qs.executeQuery(
+          Object.assign({}, this.qs.build(), {
+            type: "delete",
+            operationId,
+            namespace: this.namespace,
+          })
         );
 
-        // If nothing was deleted, we're done
-        if (deletedCount === 0) {
-          return 0;
+        // Verify the delete was successful
+        if (!result || result.error) {
+          throw new Error(result?.error || "Delete failed");
         }
 
-        try {
-          // Execute delete operation on the server and ensure we await it
-          const result = await this.qs.executeQuery(
-            Object.assign({}, this.qs.build(), {
-              type: "delete",
-              operationId,
-              namespace: this.namespace,
-            })
+      } catch (error) {
+        // Rollback using the operations manager
+        this._notifyError(error, "delete");
+        this.operationsManager.rollback(operationId);
+
+        // Re-throw to be caught by the outer try/catch
+        throw error;
+      }
+
+      // In case there were ghost items in the overfetch cache
+      if (deletedCount > 1) {
+        setTimeout(() => {
+          this.removeGhosts().catch(err => 
+            console.error("Error removing ghosts after bulk delete:", err)
           );
+        }, 500);
+      }
 
-          // Verify the delete was successful
-          if (!result || result.error) {
-            throw new Error(result?.error || "Delete failed");
-          }
-
-          return deletedCount;
-        } catch (error) {
-          // Rollback using the operations manager
-          this._notifyError(error, "delete");
-          this.operationsManager.rollback(operationId);
-
-          // Re-throw to be caught by the outer try/catch
-          throw error;
-        }
-      });
-    } catch (error) {
-      // Re-throw for anyone awaiting
-      throw error;
-    }
+      return deletedCount;
+    });
   }
 
   /**
@@ -978,9 +1008,18 @@ export class LiveQuerySet {
     const deletedIdsSet = new Set(instanceIds);
 
     // Use the operations manager to remove items with matching IDs
-    this.operationsManager.remove(operationId, (item) =>
+    const deletedCount = this.operationsManager.remove(operationId, (item) =>
       deletedIdsSet.has(item[pkField])
     );
+
+    // In case there were ghost items in the overfetch cache
+    if (deletedCount > 1) {
+      setTimeout(() => {
+        this.removeGhosts().catch(err => 
+          console.error("Error removing ghosts after bulk delete:", err)
+        );
+      }, 500);
+    }
   }
 
   /**
