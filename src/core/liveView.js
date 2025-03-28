@@ -483,14 +483,14 @@ export class LiveQuerySet {
       if (this.overfetchCache) {
         // Reset existing cache
         this.overfetchCache.reset({
-          newQs: this.qs,
+          newQs: this._findRootQuerySet(),
           newOptions: this.options,
           newCacheSize: overfetchSize
         });
       } else {
         // Create new cache
         this.overfetchCache = new OverfetchCache(
-          this.qs,
+          this._findRootQuerySet(),
           this.options,
           overfetchSize
         );
