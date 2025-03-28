@@ -210,7 +210,7 @@ export const handleModelEvent = async (event) => {
         }
         case EventType.DELETE: {
           const pkValue = event[pkField];
-          lqs.handleExternalDeleteEvent(pkValue, event.operationId);
+          await lqs.handleExternalDeleteEvent(pkValue, event.operationId);
           break;
         }
         case EventType.BULK_UPDATE: {
@@ -220,7 +220,7 @@ export const handleModelEvent = async (event) => {
         }
         case EventType.BULK_DELETE: {
           const fieldName = pk_field_name || pkField;
-          lqs.handleExternalBulkDeleteEvent(instances, fieldName, event.operationId);
+          await lqs.handleExternalBulkDeleteEvent(instances, fieldName, event.operationId);
           break;
         }
       }
@@ -878,7 +878,7 @@ export class LiveQuerySet {
    * @param {Array<string|number>} instanceIds - Array of primary key values.
    * @param {string} [pkField] - Primary key field name.
    */
-  handleExternalBulkDeleteEvent(
+  async handleExternalBulkDeleteEvent(
     instanceIds,
     pkField = this.ModelClass.primaryKeyField,
     operationId
@@ -910,7 +910,7 @@ export class LiveQuerySet {
   
     // If we deleted any items and have a limit, refetch
     if (deletedCount > 0) {
-      refetchAfterDelete(this, deletedCount, operationId, true);
+      await refetchAfterDelete(this, deletedCount, operationId, true);
     }
   }
 
@@ -992,7 +992,7 @@ export class LiveQuerySet {
    * Handles an external delete event.
    * @param {number|string} itemId - The primary key value of the deleted item.
    */
-  handleExternalDeleteEvent(itemId, operationId) {
+  async handleExternalDeleteEvent(itemId, operationId) {
     if (activeOperationIds.has(operationId)) {
       return;
     }
@@ -1013,7 +1013,7 @@ export class LiveQuerySet {
   
     // If we successfully deleted an item and have a limit, refetch
     if (deletedCount > 0) {
-      refetchAfterDelete(this, deletedCount, operationId, true);
+      await refetchAfterDelete(this, deletedCount, operationId, true);
     }
   }
 
