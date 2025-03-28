@@ -192,7 +192,7 @@ export const handleModelEvent = async (event) => {
         const pkValues = isBulkEvent ? instances : event[pkField];
         
         // Handle the event in the cache
-        lqs.overfetchCache.handleModelEvent(cacheEventType, pkValues);
+        await lqs.overfetchCache.handleModelEvent(cacheEventType, pkValues);
       } catch (error) {
         console.error("Error handling model event in overfetch cache:", error);
       }

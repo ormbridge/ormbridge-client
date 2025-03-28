@@ -95,9 +95,9 @@ export class OverfetchCache {
    * Handle external model events in the OverfetchCache class
    * @param {EventType} eventType - The type of event ('create', 'update', 'delete', etc.)
    * @param {Array|string|number} pkValues - Primary key(s) of the affected items
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  handleModelEvent(eventType, pkValues) {
+  async handleModelEvent(eventType, pkValues) {
     // Always check if we have a cache to work with
     if (!this.mainDataArray || !this.limit) return;
     
@@ -113,14 +113,46 @@ export class OverfetchCache {
       return;
     }
     
-    // For update or delete events, check if they affect our cached items
-    if (eventType === EventType.UPDATE || eventType === EventType.DELETE) {
+    // Create a Set for faster lookups
+    const pkSet = new Set(pkArray);
+    
+    // For bulk delete events, ensure the cache is properly validated
+    if (eventType === EventType.BULK_DELETE) {
+      // Immediately filter out the deleted items from the cache
+      this.cacheItems = this.cacheItems.filter(
+        item => !pkSet.has(item[this.primaryKeyField])
+      );
+      
+      // For bulk deletes, run a refresh immediately and awaited
+      // This ensures the cache is valid before any replacements are provided
+      try {
+        await this.refreshCache();
+      } catch (error) {
+        console.error('OverfetchCache: Error refreshing cache after bulk delete:', error);
+      }
+      return;
+    }
+    
+    // For individual delete events, filter and schedule refresh
+    if (eventType === EventType.DELETE) {
+      // Immediately filter out the deleted item from the cache
+      this.cacheItems = this.cacheItems.filter(
+        item => !pkSet.has(item[this.primaryKeyField])
+      );
+      
+      // Schedule a background refresh
+      setTimeout(() => this.refreshCache(), 0);
+      return;
+    }
+    
+    // For update events, check if they affect our cached items
+    if (eventType === EventType.UPDATE || eventType === EventType.BULK_UPDATE) {
       // Check if any of our cached items are affected
       const isCacheAffected = this.cacheItems.some(item => 
         pkArray.includes(item[this.primaryKeyField])
       );
       
-      // If cache is affected, refresh it
+      // If cache is affected, refresh it in the background
       if (isCacheAffected) {
         setTimeout(() => this.refreshCache(), 0);
       }
