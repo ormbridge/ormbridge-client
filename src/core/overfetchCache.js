@@ -115,6 +115,10 @@ export class OverfetchCache {
    */
   getReplacements(count) {
     if (count <= 0) return [];
+
+    if (this.isFetching){
+      throw new Error(`tried to fetch ${count} items from cache while its still loading`)
+    }
     
     // Take items from the cache
     const itemsToReturn = Math.min(count, this.cacheItems.length);
