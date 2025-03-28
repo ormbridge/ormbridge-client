@@ -316,7 +316,7 @@ export class LiveQuerySet {
     // Enable overfetch if size > 0 and limit is set
     if (this.options.overfetchSize > 0 && this._serializerOptions.limit) {
       this.overfetchCache = new OverfetchCache(
-        this.qs,
+        this._findRootQuerySet(),
         this.options,
         this.options.overfetchSize
       );
@@ -334,6 +334,21 @@ export class LiveQuerySet {
       this.ModelClass,
       this.overfetchCache
     );
+  }
+
+  /**
+   * Helper method to find the root queryset
+   * Traverses the parent chain to find the top-level LiveQuerySet
+   * @returns {QuerySet} The root queryset
+   * @private
+   */
+  _findRootQuerySet() {
+    let current = this;
+    // Traverse up the parent chain until we reach the root
+    while (current.parent) {
+      current = current.parent;
+    }
+    return current.qs;
   }
 
   handleOptimisticMetricUpdates(

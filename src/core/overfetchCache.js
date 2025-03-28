@@ -61,7 +61,6 @@ export class OverfetchCache {
       // Replace the entire cache
       this.cacheItems = nextPageItems;
       
-      console.log(`OverfetchCache: Refreshed with ${nextPageItems.length} items`);
     } catch (error) {
       console.error('OverfetchCache: Error refreshing cache:', error);
     } finally {
@@ -107,17 +106,6 @@ export class OverfetchCache {
     
     // Fetch fresh data
     return this.initialize();
-  }
-  
-  /**
-   * Update the offset when it changes in the main view
-   * @param {number} newOffset - New offset value
-   */
-  updateOffset(newOffset) {
-    if (this.offset !== newOffset) {
-      this.offset = newOffset;
-      this.refreshCache();
-    }
   }
   
   /**
