@@ -9,12 +9,14 @@ export class OperationsManager {
    * @param {Array} dataArray - Reference to the array to be managed
    * @param {Function} notifyCallback - Function to call on data changes (type: 'create'|'update'|'delete')
    * @param {Function} [modelClass] - Constructor function for the model class
+   * @param {Object} [overfetchCache] - Reference to the overfetch cache for replacements
    */
-  constructor(dataArray, notifyCallback, modelClass = null) {
+  constructor(dataArray, notifyCallback, modelClass = null, overfetchCache = null) {
     this.dataArray = dataArray;
     this.notify = notifyCallback;
     this.operationPatches = new Map();
     this.ModelClass = modelClass;
+    this.overfetchCache = overfetchCache;
   }
 
   /**
@@ -35,11 +37,19 @@ export class OperationsManager {
 
       if (!patches.length) return false;
 
-      this.operationPatches.set(operationId, {
+      // Create an operation record.
+      const opRecord = {
         inversePatches,
         eventType,
         timestamp: Date.now(),
-      });
+      };
+
+      // Append this opRecord to the list of operations for the opId.
+      if (this.operationPatches.has(operationId)) {
+        this.operationPatches.get(operationId).push(opRecord);
+      } else {
+        this.operationPatches.set(operationId, [opRecord]);
+      }
 
       this.dataArray.length = 0;
       newState.forEach(item => {
@@ -133,9 +143,21 @@ export class OperationsManager {
       }
     }, "delete");
 
+    // If items were removed and we have a cache, get replacements
+    if (success && removeCount > 0 && this.overfetchCache) {
+      // Get replacement items from cache
+      const replacements = this.overfetchCache.getReplacements(removeCount);
+      if (replacements.length > 0) {
+        const createSuccess = this.applyMutation(operationId, draft => {
+          // Insert replacement items – here we push them at the end.
+          draft.push(...replacements);
+        }, "create");
+      }
+    }
+
     return success ? removeCount : 0;
   }
-
+  
   /**
    * Rolls back an operation by applying its inverse patches
    *
@@ -147,18 +169,32 @@ export class OperationsManager {
     if (!operation) return false;
 
     try {
-      const restoredState = apply(this.dataArray, operation.inversePatches);
-      this.dataArray.length = 0;
-      restoredState.forEach(item => {
-        this.dataArray.push(this.ModelClass && !(item instanceof this.ModelClass)
-          ? new this.ModelClass(item)
-          : item);
-      });
-
-      const inverseEvent = { create: "delete", delete: "create" }[operation.eventType] || "update";
-      this.notify(inverseEvent);
+      let currentState = this.dataArray;
+      // Roll back each operation in reverse order
+      for (const op of operations.slice().reverse()) {
+        // Capture a snapshot before applying the inverse patches for this op
+        const beforeState = currentState.map(m => m.serialize());
+        currentState = apply(currentState, op.inversePatches);
+  
+        // Replace dataArray with the restored state for this op.
+        this.dataArray.length = 0;
+        currentState.forEach(item => {
+          this.dataArray.push(
+            this.ModelClass && !(item instanceof this.ModelClass)
+              ? new this.ModelClass(item)
+              : item
+          );
+        });
+  
+        const updatedArray = this.dataArray.map(m => m.serialize());
+        // Compute the inverse event based on the original op event type
+        const inverseEvent =
+          { create: "delete", delete: "create" }[op.eventType] || "update";
+        // Notify using the original rollback logic for this op
+        this.notify(inverseEvent, updatedArray, beforeState, operationId);
+      }
+  
       this.operationPatches.delete(operationId);
-
       return true;
     } catch (error) {
       console.error(`Error rolling back operation ${operationId}:`, error);
