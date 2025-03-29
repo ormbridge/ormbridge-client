@@ -154,6 +154,7 @@ export const handleModelEvent = async (event) => {
     bulk_update: EventType.BULK_UPDATE,
     bulk_delete: EventType.BULK_DELETE,
   };
+  
   const normalizedEventType = typeMap[eventType] || eventType;
   if (!Object.values(EventType).includes(normalizedEventType)) {
     console.warn(`Unknown event type: ${eventType}`);
@@ -702,6 +703,11 @@ export class LiveQuerySet {
 
       if (itemsToDelete.length === 0) {
         return 0; // Nothing to delete
+      }
+
+      // invalidate the items in the cache BEFORE we delete
+      if (this.overfetchCache) {
+        this.overfetchCache.remove(itemsToDelete);
       }
 
       // Use the operations manager to remove all items matching the filter

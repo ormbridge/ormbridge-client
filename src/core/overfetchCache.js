@@ -1,4 +1,5 @@
 import { EventType } from './eventReceivers'
+import { debounce } from 'lodash-es'
 
 /**
  * OverfetchCache - Maintains a synchronized cache of items that don't exist in the main view
@@ -21,6 +22,9 @@ export class OverfetchCache {
     this.primaryKeyField = this.ModelClass.primaryKeyField || 'id';
     this.isFetching = false;
     this.mainDataArray = null; // Will be set externally
+    
+    // Create a debounced refresh function to prevent multiple refreshes
+    this.debouncedRefresh = debounce(this.refreshCache.bind(this), 300);
   }
 
   /**
@@ -92,6 +96,25 @@ export class OverfetchCache {
   }
 
   /**
+   * Remove items from the cache by ID and trigger a refresh
+   * @param {Array|string|number} ids - Primary key(s) of the items to remove
+   * @returns {void}
+   */
+  remove(ids) {
+    // Normalize ids to an array
+    const idArray = Array.isArray(ids) ? ids : [ids];
+    const idSet = new Set(idArray);
+    
+    // Remove the items from the cache
+    this.cacheItems = this.cacheItems.filter(item => 
+      !idSet.has(item[this.primaryKeyField])
+    );
+    
+    // Schedule a refresh to replenish the cache
+    this.debouncedRefresh();
+  }
+
+  /**
    * Handle external model events in the OverfetchCache class
    * @param {EventType} eventType - The type of event ('create', 'update', 'delete', etc.)
    * @param {Array|string|number} pkValues - Primary key(s) of the affected items
@@ -110,7 +133,7 @@ export class OverfetchCache {
     if (eventType === EventType.CREATE) {
         if (this.cacheItems.length < this.cacheSize) {
             // Refresh the cache to potentially include the new items
-            setTimeout(() => this.refreshCache(), 0);
+            this.debouncedRefresh();
         }
         return;
     }
@@ -131,7 +154,7 @@ export class OverfetchCache {
         
         // If cache is affected, refresh it
         if (isCacheAffected) {
-            setTimeout(() => this.refreshCache(), 0);
+            this.debouncedRefresh();
         }
         return;
     }
@@ -190,8 +213,8 @@ export class OverfetchCache {
     
     // If cache is now low, trigger a refresh
     if (this.cacheItems.length < this.cacheSize / 2 && !this.isFetching) {
-      // Use setTimeout to avoid blocking the current operation
-      setTimeout(() => this.refreshCache(), 0);
+      // Use debounced refresh to avoid too many refreshes
+      this.debouncedRefresh();
     }
     
     return replacements;
