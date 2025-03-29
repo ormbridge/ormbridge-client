@@ -1,17 +1,15 @@
 import { create, apply } from "mutative";
-import PQueue from 'p-queue'; // Import p-queue
 
 /**
- * Manages array operations with sequential execution, patching, and rollback.
- * Errors are indicated by Promise rejection. Successful operations resolve with
- * a count of affected items (where applicable) or null/undefined.
+ * Manages array operations with automatic patching and rollback capabilities
+ * using Mutative's JSON patch functionality.
  */
 export class OperationsManager {
   /**
    * @param {Array} dataArray - Reference to the array to be managed
-   * @param {Function} notifyCallback - Function to call on data changes
+   * @param {Function} notifyCallback - Function to call on data changes (type: 'create'|'update'|'delete')
    * @param {Function} [modelClass] - Constructor function for the model class
-   * @param {Object} [overfetchCache] - Reference to the overfetch cache
+   * @param {Object} [overfetchCache] - Reference to the overfetch cache for replacements
    */
   constructor(dataArray, notifyCallback, modelClass = null, overfetchCache = null) {
     this.dataArray = dataArray;
@@ -19,317 +17,278 @@ export class OperationsManager {
     this.operationPatches = new Map();
     this.ModelClass = modelClass;
     this.overfetchCache = overfetchCache;
-    this._queue = new PQueue({ concurrency: 1 });
 
+    // Initialize a cache operations manager if we have a cache
     this.cacheManager = null;
-    if (this.overfetchCache && this.ModelClass) {
+    if (this.overfetchCache) {
+      // Create a cache manager with a no-op notify function and no nested cache
       this.cacheManager = new OperationsManager(
         this.overfetchCache.cacheItems,
-        () => {},
+        () => {}, // No-op notify function, because this isnt seen in the UI
         this.ModelClass,
-        null
+        null // No nested cache to prevent infinite recursion
       );
     }
   }
 
-  // --- Private Methods (Executed by the Queue) ---
-
   /**
-   * Performs the actual state mutation. Resolves with the count of affected items.
-   * Throws an error on failure, causing the Promise to reject.
-   * @private
+   * Applies a mutation to the data array and stores patches for rollback
+   *
+   * @param {string} operationId - Caller-supplied ID for the operation
+   * @param {Function} mutator - Function that modifies the draft state
+   * @param {string} eventType - Event type to notify ('create', 'update', 'delete')
+   * @returns {boolean} Whether the operation was successful
    */
-  _performMutation(operationId, mutator, eventType) {
-    const originalSerializedArray = this.dataArray.map(m => typeof m?.serialize === 'function' ? m.serialize() : m);
-    let mutationResult = 0; // Default count to 0
+  applyMutation(operationId, mutator, eventType) {
+    const originalArray = this.dataArray.map(m => m.serialize());
 
-    // No try...catch here; let errors propagate to reject the promise
-    const [newState, patches, inversePatches] = create(
-      this.dataArray,
-      draft => {
-        mutationResult = mutator(draft) ?? 0; // Capture result, default to 0
-        // Ensure mutationResult is a number
-        if(typeof mutationResult !== 'number') {
-            console.warn(`Mutator for OpID ${operationId} did not return a number. Defaulting count to 0.`);
-            mutationResult = 0;
-        }
-      },
-      { enablePatches: true }
-    );
+    try {
+      const [newState, patches, inversePatches] = create(this.dataArray, draft => {
+        mutator(draft);
+      }, { enablePatches: true });
 
-    // If no patches were generated, no change occurred. Resolve with 0 count.
-    if (patches.length === 0) {
-      return 0;
-    }
+      if (!patches.length) return false;
 
-    // Store inverse patches *before* modifying the live array
-    const opRecord = { inversePatches, eventType, timestamp: Date.now() };
-    if (this.operationPatches.has(operationId)) {
-      this.operationPatches.get(operationId).push(opRecord);
-    } else {
-      this.operationPatches.set(operationId, [opRecord]);
-    }
+      // Create an operation record.
+      const opRecord = {
+        inversePatches,
+        eventType,
+        timestamp: Date.now(),
+      };
 
-    // Update the managed array *in place*
-    this.dataArray.length = 0;
-    newState.forEach(item => {
-      this.dataArray.push(
-        this.ModelClass && !(item instanceof this.ModelClass) && typeof item === 'object' && item !== null
-          ? new this.ModelClass(item)
-          : item
-      );
-    });
-
-    // Notify listeners *after* state change
-    const updatedSerializedArray = this.dataArray.map(m => typeof m?.serialize === 'function' ? m.serialize() : m);
-    if (eventType !== 'cache') {
-      this.notify(eventType, updatedSerializedArray, originalSerializedArray, operationId);
-    }
-
-    // Resolve the promise with the count returned by the mutator
-    return mutationResult;
-  }
-
-  /**
-   * Performs the actual rollback. Resolves with `true` if patches were found and processed
-   * (even if they had no effect), `false` otherwise.
-   * Throws an error on failure, causing the Promise to reject.
-   * @private
-   */
-  _performRollback(operationId) {
-    const operations = this.operationPatches.get(operationId);
-    if (!operations || operations.length === 0) {
-      console.warn(`Rollback requested for ${operationId}, but no patches found or already processed.`);
-      return false; // Indicate no rollback attempted/needed
-    }
-
-    // No try...catch here; let errors propagate to reject the promise
-    let hadEffect = false;
-    for (const op of operations.slice().reverse()) {
-      const beforeStateSerialized = this.dataArray.map(m => typeof m?.serialize === 'function' ? m.serialize() : m);
-      let rolledBackState;
-      let appliedPatches;
-
-      // Use create again to track actual changes from inverse patches
-       try {
-            [rolledBackState, appliedPatches] = create(this.dataArray, draft => {
-               apply(draft, op.inversePatches)
-            }, {enablePatches: true });
-        } catch(applyError) {
-             console.error(`Error applying inverse patch for ${operationId}:`, applyError, op.inversePatches);
-             // Treat this as a rollback failure? For now, re-throw.
-             throw applyError;
-        }
-
-
-      if (appliedPatches && appliedPatches.length > 0) {
-        hadEffect = true;
-        // Update the managed array in place
-        this.dataArray.length = 0;
-        rolledBackState.forEach(item => {
-          this.dataArray.push(
-            this.ModelClass && !(item instanceof this.ModelClass) && typeof item === 'object' && item !== null
-              ? new this.ModelClass(item)
-              : item
-          );
-        });
-
-        // Notify about the change
-        const updatedStateSerialized = this.dataArray.map(m => typeof m?.serialize === 'function' ? m.serialize() : m);
-        const inverseEvent = { create: "delete", delete: "create" }[op.eventType] || "update";
-        if (op.eventType !== 'cache') {
-          this.notify(inverseEvent, updatedStateSerialized, beforeStateSerialized, operationId);
-        }
+      // Append this opRecord to the list of operations for the opId.
+      if (this.operationPatches.has(operationId)) {
+        this.operationPatches.get(operationId).push(opRecord);
+      } else {
+        this.operationPatches.set(operationId, [opRecord]);
       }
+
+      this.dataArray.length = 0;
+      newState.forEach(item => {
+        this.dataArray.push(this.ModelClass && !(item instanceof this.ModelClass)
+          ? new this.ModelClass(item)
+          : item);
+      });
+
+      const updatedArray = this.dataArray.map(m => m.serialize());
+      this.notify(eventType, updatedArray, originalArray, operationId);
+
+      return true;
+    } catch (error) {
+      console.error("Mutation error:", error);
+      return false;
     }
-
-    // Successfully processed rollback, remove the patches
-    this.operationPatches.delete(operationId);
-    // Resolve indicating rollback was processed. Maybe return hadEffect? Resolve just true for now.
-    return true;
-  }
-
-  // --- Public API Methods (Enqueue Operations - ASYNC, return Promise<number|boolean|void>) ---
-
-  /**
-   * Applies a mutation by enqueueing it.
-   * Returns a Promise resolving to the count returned by the mutator, or rejecting on error.
-   */
-  async applyMutation(operationId, mutator, eventType) {
-    return this._queue.add(() => this._performMutation(operationId, mutator, eventType));
   }
 
   /**
-   * Inserts items by enqueueing the mutation.
-   * Returns Promise<number> (count of items effectively added). Rejects on error.
+   * Inserts items into the array with position and size constraints
+   *
+   * @param {string} operationId - Caller-supplied ID for the operation
+   * @param {Array|Object} items - Item(s) to insert
+   * @param {Object} options - Insert options
+   * @param {string} [options.position='append'] - Where to insert ('prepend'|'append')
+   * @param {number} [options.limit] - Maximum array size
+   * @param {boolean} [options.fixedPageSize] - Whether to maintain fixed size
+   * @returns {boolean} Whether items were inserted
    */
-  async insert(operationId, items, { position = 'append', limit, fixedPageSize } = {}) {
+  insert(operationId, items, { position = 'append', limit, fixedPageSize } = {}) {
     const itemsToInsert = (Array.isArray(items) ? items : [items]).map(item =>
-      this.ModelClass && !(item instanceof this.ModelClass) && typeof item === 'object' && item !== null
-        ? new this.ModelClass(item)
-        : item
+      this.ModelClass && !(item instanceof this.ModelClass) ? new this.ModelClass(item) : item
     );
 
-    if (!itemsToInsert.length) return 0; // Resolve immediately with 0 count
+    if (!itemsToInsert.length) return false;
 
-    const mutator = (draft) => {
-      const initialLength = draft.length;
-      // --- Insert logic ---
-        if (position === "append") {
-            if (fixedPageSize && limit !== undefined && draft.length >= limit) return 0;
-            draft.push(...itemsToInsert);
-            if (!fixedPageSize && limit !== undefined && draft.length > limit) draft.splice(limit);
-        } else { // prepend
-            let removedCount = 0;
-            if (fixedPageSize && limit !== undefined && draft.length >= limit) {
-                 removedCount = Math.min(itemsToInsert.length, draft.length);
-                 draft.splice(-removedCount);
-            }
-            draft.unshift(...itemsToInsert);
-             if (!fixedPageSize && limit !== undefined && draft.length > limit) {
-                 // Simpler trim logic
-                 draft.splice(limit);
-            }
+    return this.applyMutation(operationId, draft => {
+      if (position === "append") {
+        if (fixedPageSize && limit !== undefined && draft.length >= limit) return;
+        draft.push(...itemsToInsert);
+        if (!fixedPageSize && limit !== undefined && draft.length > limit) draft.splice(limit);
+      } else {
+        if (fixedPageSize && limit !== undefined && draft.length >= limit) {
+          draft.splice(-Math.min(itemsToInsert.length, draft.length));
         }
-      // --- End insert logic ---
-      return draft.length - initialLength; // Return the actual change in length
-    };
-
-    return this.applyMutation(operationId, mutator, "create");
+        draft.unshift(...itemsToInsert);
+        if (!fixedPageSize && limit !== undefined && draft.length > limit) draft.splice(limit);
+      }
+    }, "create");
   }
 
   /**
-   * Updates items by enqueueing the mutation.
-   * Returns Promise<number> (count of items updated). Rejects on error.
+   * Updates items in the array based on a filter function
+   *
+   * @param {string} operationId - Caller-supplied ID for the operation
+   * @param {Function} filterFn - Function to determine which items to update
+   * @param {Object} updates - Properties to update
+   * @returns {number} Count of updated items
    */
-  async update(operationId, filterFn, updates) {
-     // Optimization: check if any items match *before* queueing
-     const itemsToUpdateExist = this.dataArray.some(filterFn);
-     if (!itemsToUpdateExist) {
-         return 0; // Resolve immediately with 0 count
-     }
+  update(operationId, filterFn, updates) {
+    let updateCount = 0;
 
-    const mutator = (draft) => {
-      let updateCount = 0;
+    const success = this.applyMutation(operationId, draft => {
       draft.forEach((item, idx) => {
         if (filterFn(item)) {
           draft[idx] = new this.ModelClass({ ...item, ...updates });
           updateCount++;
         }
       });
-      return updateCount; // Return count
-    };
+    }, "update");
 
-    return this.applyMutation(operationId, mutator, "update");
+    return success ? updateCount : 0;
   }
 
   /**
-   * Removes items by enqueueing the mutation. Handles replenishment.
-   * Returns Promise<number> for the count of items removed. Rejects on error.
+   * Removes items from the array based on a filter function
+   *
+   * @param {string} operationId - Caller-supplied ID for the operation
+   * @param {Function} filterFn - Function to determine which items to remove
+   * @param {Boolean} replenish - Optimistically replenish from the overfetch cache
+   * @returns {number} Count of removed items
    */
-  async remove(operationId, filterFn, replenish = true, operation = "delete") {
-    // Optimization: check if any items match *before* queueing
-     const itemsToRemove = this.dataArray.filter(filterFn);
-     if (itemsToRemove.length === 0) {
-         return 0; // Resolve immediately with 0 count
-     }
-
-     const mutator = (draft) => {
-       let actualRemovedCount = 0;
-       for (let i = draft.length - 1; i >= 0; i--) {
-         if (filterFn(draft[i])) {
-           draft.splice(i, 1);
-           actualRemovedCount++;
-         }
-       }
-       return actualRemovedCount; // Return count
-     };
-
-     // Enqueue the removal task and get its promise
-     const removalPromise = this.applyMutation(operationId, mutator, operation);
-
-     // Handle replenishment *after* the removal task completes successfully
-     if (replenish && this.overfetchCache) {
-       removalPromise.then(removedCount => { // Access the resolved count
-         if (removedCount > 0) {
-           const replacements = this.overfetchCache.getReplacements(removedCount);
-           if (replacements.length > 0) {
-             const replenishMutator = draft => {
-               const pkField = this.ModelClass?.primaryKeyField || 'id';
-               const existingIds = new Set(draft.map(item => item[pkField]));
-               const uniqueReplacements = replacements.filter(item => !existingIds.has(item[pkField]));
-               let addedCount = 0;
-               if (uniqueReplacements.length > 0) {
-                 draft.push(...uniqueReplacements);
-                 addedCount = uniqueReplacements.length;
-               }
-               return addedCount;
-             };
-             const replenishOpId = `${operationId}_replenish`;
-             // Enqueue replenishment but don't await it here or link its outcome
-             // to the original removal promise's resolution.
-             this._queue.add(() => this._performMutation(replenishOpId, replenishMutator, 'create'))
-                      .catch(err => console.error(`Error during replenishment for ${operationId}:`, err)); // Log replenishment errors separately
-           }
-         }
-       }).catch(err => {
-         // Log removal error, but maybe replenishment should still be attempted?
-         // For now, it won't run if removalPromise rejects.
-         console.error(`Removal failed for OpID ${operationId}, replenishment skipped:`, err);
-       });
-     }
-
-     // Return the promise associated *only* with the removal operation
-     return removalPromise;
-   }
-
-
+  remove(operationId, filterFn, replenish = true, operation = "delete") {
+    let removeCount = 0;
+  
+    const success = this.applyMutation(operationId, draft => {
+      for (let i = draft.length - 1; i >= 0; i--) {
+        if (filterFn(draft[i])) {
+          draft.splice(i, 1);
+          removeCount++;
+        }
+      }
+    }, operation);
+  
+    // If items were removed and we have a cache, get replacements
+    if (success && removeCount > 0 && this.overfetchCache && replenish) {
+      // Get replacement items from cache
+      const replacements = this.overfetchCache.getReplacements(removeCount);
+      if (replacements.length > 0) {
+        const createSuccess = this.applyMutation(operationId, draft => {
+          // Filter out any replacement items that already exist in the data array
+          const pkField = this.ModelClass.primaryKeyField || 'id';
+          const existingIds = new Set(draft.map(item => item[pkField]));
+          const uniqueReplacements = replacements.filter(item => !existingIds.has(item[pkField]));
+          
+          // Insert unique replacement items – here we push them at the end.
+          if (uniqueReplacements.length > 0) {
+            draft.push(...uniqueReplacements);
+          }
+        }, "create");
+      }
+    }
+  
+    return success ? removeCount : 0;
+  }
+  
   /**
-   * Rolls back an operation by enqueueing the rollback action.
-   * Returns Promise<boolean> indicating if rollback was attempted (found patches). Rejects on error.
+   * Rolls back an operation by applying its inverse patches
+   *
+   * @param {string} operationId - ID of the operation to roll back
+   * @returns {boolean} Whether the rollback was successful
    */
-  async rollback(operationId) {
-     // Check patch existence before queueing
-     if (!this.operationPatches.has(operationId)) {
-         return false; // Resolve immediately indicating no rollback needed/possible
-     }
-     // If patches exist, queue the rollback. The promise resolves with true if processed, rejects on error.
-     return this._queue.add(() => this._performRollback(operationId));
+  rollback(operationId) {
+    const operations = this.operationPatches.get(operationId);
+    if (!operations) return false;
+  
+    try {
+      let currentState = this.dataArray;
+      // Roll back each operation in reverse order
+      for (const op of operations.slice().reverse()) {
+        // Capture a snapshot before applying the inverse patches for this op
+        const beforeState = currentState.map(m => m.serialize());
+        currentState = apply(currentState, op.inversePatches);
+  
+        // Replace dataArray with the restored state for this op.
+        this.dataArray.length = 0;
+        currentState.forEach(item => {
+          this.dataArray.push(
+            this.ModelClass && !(item instanceof this.ModelClass)
+              ? new this.ModelClass(item)
+              : item
+          );
+        });
+  
+        const updatedArray = this.dataArray.map(m => m.serialize());
+        // Compute the inverse event based on the original op event type
+        const inverseEvent =
+          { create: "delete", delete: "create" }[op.eventType] || "update";
+        // Notify using the original rollback logic for this op
+        this.notify(inverseEvent, updatedArray, beforeState, operationId);
+      }
+  
+      this.operationPatches.delete(operationId);
+      return true;
+    } catch (error) {
+      console.error(`Error rolling back operation ${operationId}:`, error);
+      return false;
+    }
   }
 
-  // --- Cache methods proxy to cacheManager's queue ---
+  /**
+   * Cleans up old operation records
+   * @param {number} maxAgeMs - Maximum age in milliseconds
+   */
+  cleanupOperations(maxAgeMs = 60000) {
+    const cutoff = Date.now() - maxAgeMs;
+    for (const [id, { timestamp }] of this.operationPatches.entries()) {
+      if (timestamp < cutoff) this.operationPatches.delete(id);
+    }
+  }
 
-  async applyMutationToCache(operationId, mutator) {
-    if (!this.cacheManager) return 0; // Indicate 0 count
+  // Cache management methods
+
+  /**
+   * Apply a mutation directly to the cache
+   * 
+   * @param {string} operationId - Operation ID for tracking
+   * @param {Function} mutator - Function that modifies the cache draft
+   * @returns {boolean} Success status
+   */
+  applyMutationToCache(operationId, mutator) {
+    if (!this.cacheManager || !this.overfetchCache) return false;
+    
+    // Use the cache manager to apply the mutation
     return this.cacheManager.applyMutation(operationId, mutator, "cache");
   }
-
-  async insertToCache(operationId, items) {
-    if (!this.cacheManager) return 0;
-    return this.cacheManager.insert(operationId, items, { position: 'append' });
+  
+  /**
+   * Insert items directly into the cache
+   * 
+   * @param {string} operationId - Operation ID for tracking
+   * @param {Array|Object} items - Items to insert into the cache
+   * @returns {boolean} Success status
+   */
+  insertToCache(operationId, items) {
+    if (!this.cacheManager) return false;
+    
+    // Use the cache manager to insert items
+    return this.cacheManager.insert(operationId, items, {
+      position: 'append'
+    });
   }
-
-  async removeFromCache(operationId, filterFn) {
-     if (!this.cacheManager) return 0;
+  
+  /**
+   * Remove items from the cache
+   * 
+   * @param {string} operationId - Operation ID for tracking
+   * @param {Function} filterFn - Filter function to identify items to remove
+   * @returns {number} Number of items removed
+   */
+  removeFromCache(operationId, filterFn) {
+    if (!this.cacheManager) return 0;
+    
+    // Use the cache manager to remove items
     return this.cacheManager.remove(operationId, filterFn, false, "delete");
   }
-
-  async rollbackCache(operationId) {
-    if (!this.cacheManager) return false; // Indicate rollback not possible
+  
+  /**
+   * Roll back cache operations specifically
+   * 
+   * @param {string} operationId - ID of the operation to roll back
+   * @returns {boolean} Whether the rollback was successful
+   */
+  rollbackCache(operationId) {
+    if (!this.cacheManager) return false;
+    
+    // Use the cache manager to roll back operations
     return this.cacheManager.rollback(operationId);
   }
-
-  /**
-   * Cleans up old operation records (synchronous is fine).
-   */
-   cleanupOperations(maxAgeMs = 60000) {
-       const cutoff = Date.now() - maxAgeMs;
-       for (const [id, operations] of this.operationPatches.entries()) {
-           if (operations.length > 0 && operations[0].timestamp < cutoff) {
-               this.operationPatches.delete(id);
-           } else if (operations.length === 0) {
-               this.operationPatches.delete(id);
-           }
-       }
-    }
 }
