@@ -81,6 +81,26 @@ export class OperationsManager {
   }
 
   /**
+   * Helper function to insert items into a draft array.
+   *
+   * @param {Array} draft - The target array to update.
+   * @param {Array} itemsToInsert - Items to be inserted.
+   * @param {string} position - Where to insert ('prepend'|'append').
+   * @param {number} [limit] - Maximum allowed size of the array.
+   */
+  _performInsertion(draft, itemsToInsert, position, limit) {
+    if (position === "append") {
+      draft.push(...itemsToInsert);
+    } else {
+      draft.unshift(...itemsToInsert);
+    }
+    // Enforce the limit by trimming the array if necessary.
+    if (limit !== undefined && draft.length > limit) {
+      draft.splice(limit);
+    }
+  }
+
+  /**
    * Inserts items into the array with position and size constraints
    *
    * @param {string} operationId - Caller-supplied ID for the operation
@@ -88,28 +108,19 @@ export class OperationsManager {
    * @param {Object} options - Insert options
    * @param {string} [options.position='append'] - Where to insert ('prepend'|'append')
    * @param {number} [options.limit] - Maximum array size
-   * @param {boolean} [options.fixedPageSize] - Whether to maintain fixed size
    * @returns {boolean} Whether items were inserted
    */
-  insert(operationId, items, { position = 'append', limit, fixedPageSize } = {}) {
+  insert(operationId, items, { position = 'append', limit } = {}) {
     const itemsToInsert = (Array.isArray(items) ? items : [items]).map(item =>
-      this.ModelClass && !(item instanceof this.ModelClass) ? new this.ModelClass(item) : item
+      this.ModelClass && !(item instanceof this.ModelClass)
+        ? new this.ModelClass(item)
+        : item
     );
 
     if (!itemsToInsert.length) return false;
 
     return this.applyMutation(operationId, draft => {
-      if (position === "append") {
-        if (fixedPageSize && limit !== undefined && draft.length >= limit) return;
-        draft.push(...itemsToInsert);
-        if (!fixedPageSize && limit !== undefined && draft.length > limit) draft.splice(limit);
-      } else {
-        if (fixedPageSize && limit !== undefined && draft.length >= limit) {
-          draft.splice(-Math.min(itemsToInsert.length, draft.length));
-        }
-        draft.unshift(...itemsToInsert);
-        if (!fixedPageSize && limit !== undefined && draft.length > limit) draft.splice(limit);
-      }
+      return this._performInsertion(draft, itemsToInsert, position, limit);
     }, "create");
   }
 

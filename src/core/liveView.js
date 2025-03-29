@@ -30,8 +30,6 @@ import { OverfetchCache } from "./overfetchCache.js";
  */
 /**
  * @typedef {Object} LiveQuerySetOptions
- * @property {boolean} [strictMode] - @deprecated Use fixedPageSize instead.
- * @property {boolean} [fixedPageSize] - Fixed page size keeps the page size constant by removing items when new ones are added.
  * @property {function(): string} [operationIdGenerator] - Custom operation ID generator function.
  * @property {string} [customNamespace] - Custom namespace to append to the model name.
  * @property {SerializerOptions} [serializer] - Serializer options.
@@ -259,8 +257,6 @@ export const handleModelEvent = async (event) => {
 export class LiveQuerySet {
   /**
    * @typedef {Object} LiveQuerySetOptions
-   * @property {boolean} [strictMode] - @deprecated Use fixedPageSize instead.
-   * @property {boolean} [fixedPageSize] - Fixed page size keeps the page size constant by removing items when new ones are added.
    * @property {function(): string} [operationIdGenerator] - Custom operation ID generator function.
    * @property {string} [customNamespace] - Custom namespace to append to the model name.
    * @property {SerializerOptions} [serializer] - Serializer options.
@@ -768,9 +764,8 @@ export class LiveQuerySet {
           const optimisticItem = Object.assign({}, item, { id: operationId });
           const isAtLimit = this._serializerOptions?.limit &&
               this.dataArray.length >= this._serializerOptions.limit;
-          const useFixedPageSize = this.options.fixedPageSize || this.options.strictMode;
           // Based on our position and limit, decide where to place the optimistic item
-          if (isAtLimit && useFixedPageSize && this.overfetchCache) {
+          if (isAtLimit && this.overfetchCache) {
               if (this.insertBehavior.local === 'append'){
                   this.operationsManager.insertToCache(operationId, optimisticItem);
               } else {
@@ -782,8 +777,7 @@ export class LiveQuerySet {
           // Now add the item to the case
           this.operationsManager.insert(operationId, optimisticItem, {
               position: this.insertBehavior.local,
-              limit: this._serializerOptions?.limit,
-              fixedPageSize: useFixedPageSize,
+              limit: this._serializerOptions?.limit
           });
 
           try {
@@ -943,8 +937,7 @@ export class LiveQuerySet {
         const operationId = `get_${Date.now()}`;
         this.operationsManager.insert(operationId, freshItem, {
           position: this.insertBehavior.remote,
-          limit: this._serializerOptions?.limit,
-          fixedPageSize: this.options.fixedPageSize || this.options.strictMode,
+          limit: this._serializerOptions?.limit
         });
       }
     }
@@ -1056,8 +1049,7 @@ export class LiveQuerySet {
     if (newItems.length > 0) {
       this.operationsManager.insert(operationId, newItems, {
         position: this.insertBehavior.remote,
-        limit: this._serializerOptions?.limit,
-        fixedPageSize: this.options.fixedPageSize || this.options.strictMode,
+        limit: this._serializerOptions?.limit
       });
     }
   }
@@ -1120,8 +1112,7 @@ export class LiveQuerySet {
     // Insert the new item
     this.operationsManager.insert(operationId, item, {
       position: this.insertBehavior.remote,
-      limit: this._serializerOptions?.limit,
-      fixedPageSize: this.options.fixedPageSize || this.options.strictMode,
+      limit: this._serializerOptions?.limit
     });
   }
 
