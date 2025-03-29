@@ -179,6 +179,12 @@ export const handleModelEvent = async (event) => {
       console.error("Error refreshing metrics:", error)
     );
 
+    // Skip handling if this event was initiated by this operation
+    if (activeOperationIds.has(event.operationId)) continue;
+
+    // Skip handling if this is not the root liveqs
+    if (lqs.parent) continue;
+
     // Notify the overfetch cache about this event first
     if (lqs.overfetchCache) {
       try {        
@@ -192,12 +198,6 @@ export const handleModelEvent = async (event) => {
         console.error("Error handling model event in overfetch cache:", error);
       }
     }
-
-    // Skip handling if this event was initiated by this operation
-    if (activeOperationIds.has(event.operationId)) continue;
-
-    // Skip handling if this is not the root liveqs
-    if (lqs.parent) continue;
 
     const pkField = lqs.ModelClass.primaryKeyField;
     const isBulkEvent = [EventType.BULK_UPDATE, EventType.BULK_DELETE].includes(
@@ -702,30 +702,17 @@ export class LiveQuerySet {
     }
 
     return await withOperationId(async (operationId) => {
+      // Clear the cached items that match the filter FIRST
+      if (this.overfetchCache) {
+          this.operationsManager.removeFromCache(operationId, this.filterFn);
+      }
+
       // Get the items to be deleted for proper rollback
       const itemsToDelete = this.dataArray.filter(this.filterFn);
 
       if (itemsToDelete.length === 0) {
         return 0; // Nothing to delete
       }
-
-      // If we have a cache, also delete items with matching IDs from there (don't apply filter)
-      if (this.overfetchCache) {
-        const pkField = this.ModelClass.primaryKeyField || "id";
-        const deleteIds = itemsToDelete.map(item => item[pkField]);
-        
-        // Remove items with matching primary keys from cache
-        this.operationsManager.removeFromCache(
-          operationId,
-          item => deleteIds.includes(item[pkField])
-        );
-      }
-
-      // experiment
-      setTimeout(() => {
-        // Your code here
-        console.log("Test if the issue is delayed cache propagation");
-      }, 100);
 
       // Use the operations manager to remove items matching the filter from main array
       const deletedCount = this.operationsManager.remove(

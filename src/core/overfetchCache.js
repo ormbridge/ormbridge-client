@@ -55,6 +55,21 @@ export class OverfetchCache {
   }
 
   /**
+   * Helper method to mutate the cache array in place. This is needed so the cache can be managed by the opsManager
+   * @param {Array} newItems - New items to replace the current cache
+   * @private
+   */
+  _resetMutation(newItems) {
+    // Clear the array while maintaining the reference
+    this.cacheItems.length = 0;
+    
+    // Add new items if provided
+    if (newItems && newItems.length > 0) {
+      this.cacheItems.push(...newItems);
+    }
+  }
+
+  /**
    * Refresh the cache by fetching items not in the main data array
    * @returns {Promise<void>}
    */
@@ -86,7 +101,7 @@ export class OverfetchCache {
       const newItems = await queryToUse.fetch(fetchOptions);
       
       // Replace the entire cache
-      this.cacheItems = newItems;
+      this._resetMutation(newItems);
       
     } catch (error) {
       console.error('OverfetchCache: Error refreshing cache:', error);
@@ -129,8 +144,10 @@ export class OverfetchCache {
         
         // If it's a delete or bulk delete, remove the affected items immediately
         if (eventType === EventType.DELETE || eventType === EventType.BULK_DELETE) {
-            this.cacheItems = this.cacheItems.filter(item => 
-                !pkSet.has(item[this.primaryKeyField]));
+            this._resetMutation(
+              this.cacheItems.filter(item => 
+                !pkSet.has(item[this.primaryKeyField]))
+            )
         }
         
         // If cache is affected, refresh it
@@ -174,7 +191,7 @@ export class OverfetchCache {
     }
     
     // Clear the current cache
-    this.cacheItems = [];
+    this._resetMutation()
     
     // Fetch fresh data
     return this.initialize();
