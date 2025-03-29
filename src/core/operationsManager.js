@@ -229,60 +229,59 @@ export class OperationsManager {
    */
   async remove(operationId, filterFn, replenish = true, operation = "delete") {
     // Optimization: check if any items match *before* queueing
-    const itemsToRemove = this.dataArray.filter(filterFn);
-    if (itemsToRemove.length === 0) {
-      return 0; // Resolve immediately with 0 count
-    }
+     const itemsToRemove = this.dataArray.filter(filterFn);
+     if (itemsToRemove.length === 0) {
+         return 0; // Resolve immediately with 0 count
+     }
 
-    const mutator = (draft) => {
-      let actualRemovedCount = 0;
-      for (let i = draft.length - 1; i >= 0; i--) {
-        if (filterFn(draft[i])) {
-          draft.splice(i, 1);
-          actualRemovedCount++;
-        }
-      }
-      return actualRemovedCount; // Return count
-    };
+     const mutator = (draft) => {
+       let actualRemovedCount = 0;
+       for (let i = draft.length - 1; i >= 0; i--) {
+         if (filterFn(draft[i])) {
+           draft.splice(i, 1);
+           actualRemovedCount++;
+         }
+       }
+       return actualRemovedCount; // Return count
+     };
 
-    // First, enqueue the removal task and get its promise
-    const removedCount = await this.applyMutation(operationId, mutator, operation);
+     // Enqueue the removal task and get its promise
+     const removalPromise = this.applyMutation(operationId, mutator, operation);
 
-    // If items were removed and replenishment is enabled, handle replenishment
-    // within the same queue to maintain operation order
-    if (removedCount > 0 && replenish && this.overfetchCache) {
-      // Get replacements from the cache
-      const replacements = this.overfetchCache.getReplacements(removedCount);
-      
-      if (replacements.length > 0) {
-        // Create a replenishment operation within the same queue
-        const replenishOpId = `${operationId}_replenish`;
-        
-        try {
-          // Enqueue the replenishment operation in the same queue
-          await this._queue.add(() => {
-            const pkField = this.ModelClass?.primaryKeyField || 'id';
-            const existingIds = new Set(this.dataArray.map(item => item[pkField]));
-            const uniqueReplacements = replacements.filter(item => !existingIds.has(item[pkField]));
-            
-            if (uniqueReplacements.length > 0) {
-              return this._performMutation(replenishOpId, (draft) => {
-                draft.push(...uniqueReplacements);
-                return uniqueReplacements.length;
-              }, 'create');
-            }
-            return 0;
-          });
-        } catch (replenishError) {
-          // Log replenishment errors but don't fail the entire operation
-          console.error(`Error during replenishment for ${operationId}:`, replenishError);
-        }
-      }
-    }
+     // Handle replenishment *after* the removal task completes successfully
+     if (replenish && this.overfetchCache) {
+       removalPromise.then(removedCount => { // Access the resolved count
+         if (removedCount > 0) {
+           const replacements = this.overfetchCache.getReplacements(removedCount);
+           if (replacements.length > 0) {
+             const replenishMutator = draft => {
+               const pkField = this.ModelClass?.primaryKeyField || 'id';
+               const existingIds = new Set(draft.map(item => item[pkField]));
+               const uniqueReplacements = replacements.filter(item => !existingIds.has(item[pkField]));
+               let addedCount = 0;
+               if (uniqueReplacements.length > 0) {
+                 draft.push(...uniqueReplacements);
+                 addedCount = uniqueReplacements.length;
+               }
+               return addedCount;
+             };
+             const replenishOpId = `${operationId}_replenish`;
+             // Enqueue replenishment but don't await it here or link its outcome
+             // to the original removal promise's resolution.
+             this._queue.add(() => this._performMutation(replenishOpId, replenishMutator, 'create'))
+                      .catch(err => console.error(`Error during replenishment for ${operationId}:`, err)); // Log replenishment errors separately
+           }
+         }
+       }).catch(err => {
+         // Log removal error, but maybe replenishment should still be attempted?
+         // For now, it won't run if removalPromise rejects.
+         console.error(`Removal failed for OpID ${operationId}, replenishment skipped:`, err);
+       });
+     }
 
-    // Return the count of removed items
-    return removedCount;
-  }
+     // Return the promise associated *only* with the removal operation
+     return removalPromise;
+   }
 
 
   /**
