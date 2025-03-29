@@ -382,6 +382,9 @@ export class LiveQuerySet {
     originalArray,
     operationId
   ) {
+    // This is a local clean up    
+    if (eventType === 'clean') return;
+
     // Calculate optimistic updates
     const metricUpdates = MetricsManager.optimisticUpdate(
       eventType,
@@ -414,29 +417,33 @@ export class LiveQuerySet {
   
   /**
    * Removes local items that no longer exist in the remote dataset.
+   * @param {string} operationId - Unique identifier for this removal operation
    * @returns {Promise<Array>} Array of removed ghost items
    */
-  async removeGhosts() {
+  async removeGhosts(operationId) {
     const pkField = this.ModelClass.primaryKeyField || "id";
     if (this.dataArray.length === 0) return [];
-
-    let removedCount = 0;
     
-    const operationId = `remove_ghosts`; // not needed
+    // Fetch only the primary key field from the remote items
     const remoteItems = await this._findRootQuerySet().fetch({ fields: [pkField], limit: null });
     const remotePkSet = new Set(remoteItems.map(item => item[pkField]));
     
+    // Find items that don't exist in the remote dataset and aren't newly created
     const ghostItems = this.dataArray.filter(item => 
       !remotePkSet.has(item[pkField]) && !this.createdItems.has(item[pkField])
     );
     
     if (ghostItems.length > 0) {
-      removedCount = this.operationsManager.remove(operationId, 
-        item => !remotePkSet.has(item[pkField]) && !this.createdItems.has(item[pkField])
+      // Use the operations manager to remove ghost items
+      this.operationsManager.remove(
+        operationId,
+        (item) => !remotePkSet.has(item[pkField]) && !this.createdItems.has(item[pkField]),
+        false,
+        'clean'
       );
     }
     
-    return removedCount;
+    return ghostItems;
   }
 
   /**

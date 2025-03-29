@@ -129,9 +129,10 @@ export class OperationsManager {
    *
    * @param {string} operationId - Caller-supplied ID for the operation
    * @param {Function} filterFn - Function to determine which items to remove
+   * @param {Boolean} replenish - Optimistically replenish from the overfetch cache
    * @returns {number} Count of removed items
    */
-  remove(operationId, filterFn) {
+  remove(operationId, filterFn, replenish = true, operation = "delete") {
     let removeCount = 0;
   
     const success = this.applyMutation(operationId, draft => {
@@ -141,10 +142,10 @@ export class OperationsManager {
           removeCount++;
         }
       }
-    }, "delete");
+    }, operation);
   
     // If items were removed and we have a cache, get replacements
-    if (success && removeCount > 0 && this.overfetchCache) {
+    if (success && removeCount > 0 && this.overfetchCache && replenish) {
       // Get replacement items from cache
       const replacements = this.overfetchCache.getReplacements(removeCount);
       if (replacements.length > 0) {
