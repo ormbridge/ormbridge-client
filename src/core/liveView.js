@@ -402,7 +402,11 @@ export class LiveQuerySet {
   }
 
   applyOptimisticMetrics(metricUpdates, operationId) {
-    // Skip if this operation has already been processed
+    // Prevents duplicate optimistic metric updates for the same operationId.
+    // CRITICAL: This stops cache replenishment during remove() from incorrectly triggering
+    // metric changes, as replenishment currently uses the same operationId as the remove.
+    // WARN: If removing this check, refactor OperationsManager to prevent notifications
+    // when hydrating the main array from the cache during replenishment.
     if (operationId && this.optimisticMetricsApplied.has(operationId)) {
       return;
     }
