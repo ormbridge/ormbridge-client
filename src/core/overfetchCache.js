@@ -96,25 +96,6 @@ export class OverfetchCache {
   }
 
   /**
-   * Remove items from the cache by ID and trigger a refresh
-   * @param {Array|string|number} ids - Primary key(s) of the items to remove
-   * @returns {void}
-   */
-  remove(ids) {
-    // Normalize ids to an array
-    const idArray = Array.isArray(ids) ? ids : [ids];
-    const idSet = new Set(idArray);
-    
-    // Remove the items from the cache
-    this.cacheItems = this.cacheItems.filter(item => 
-      !idSet.has(item[this.primaryKeyField])
-    );
-    
-    // Schedule a refresh to replenish the cache
-    this.debouncedRefresh();
-  }
-
-  /**
    * Handle external model events in the OverfetchCache class
    * @param {EventType} eventType - The type of event ('create', 'update', 'delete', etc.)
    * @param {Array|string|number} pkValues - Primary key(s) of the affected items

@@ -17,6 +17,18 @@ export class OperationsManager {
     this.operationPatches = new Map();
     this.ModelClass = modelClass;
     this.overfetchCache = overfetchCache;
+
+    // Initialize a cache operations manager if we have a cache
+    this.cacheManager = null;
+    if (this.overfetchCache) {
+      // Create a cache manager with a no-op notify function and no nested cache
+      this.cacheManager = new OperationsManager(
+        this.overfetchCache.cacheItems,
+        () => {}, // No-op notify function, because this isnt seen in the UI
+        this.ModelClass,
+        null // No nested cache to prevent infinite recursion
+      );
+    }
   }
 
   /**
@@ -219,5 +231,64 @@ export class OperationsManager {
     for (const [id, { timestamp }] of this.operationPatches.entries()) {
       if (timestamp < cutoff) this.operationPatches.delete(id);
     }
+  }
+
+  // Cache management methods
+
+  /**
+   * Apply a mutation directly to the cache
+   * 
+   * @param {string} operationId - Operation ID for tracking
+   * @param {Function} mutator - Function that modifies the cache draft
+   * @returns {boolean} Success status
+   */
+  applyMutationToCache(operationId, mutator) {
+    if (!this.cacheManager || !this.overfetchCache) return false;
+    
+    // Use the cache manager to apply the mutation
+    return this.cacheManager.applyMutation(operationId, mutator, "cache");
+  }
+  
+  /**
+   * Insert items directly into the cache
+   * 
+   * @param {string} operationId - Operation ID for tracking
+   * @param {Array|Object} items - Items to insert into the cache
+   * @returns {boolean} Success status
+   */
+  insertToCache(operationId, items) {
+    if (!this.cacheManager) return false;
+    
+    // Use the cache manager to insert items
+    return this.cacheManager.insert(operationId, items, {
+      position: 'append'
+    });
+  }
+  
+  /**
+   * Remove items from the cache
+   * 
+   * @param {string} operationId - Operation ID for tracking
+   * @param {Function} filterFn - Filter function to identify items to remove
+   * @returns {number} Number of items removed
+   */
+  removeFromCache(operationId, filterFn) {
+    if (!this.cacheManager) return 0;
+    
+    // Use the cache manager to remove items
+    return this.cacheManager.remove(operationId, filterFn, false, "delete");
+  }
+  
+  /**
+   * Roll back cache operations specifically
+   * 
+   * @param {string} operationId - ID of the operation to roll back
+   * @returns {boolean} Whether the rollback was successful
+   */
+  rollbackCache(operationId) {
+    if (!this.cacheManager) return false;
+    
+    // Use the cache manager to roll back operations
+    return this.cacheManager.rollback(operationId);
   }
 }
