@@ -245,20 +245,22 @@ export class OperationsManager {
       return actualRemovedCount; // Return count
     };
 
-    // Enqueue the removal task and get the result
+    // First, enqueue the removal task and get its promise
     const removedCount = await this.applyMutation(operationId, mutator, operation);
 
-    // Handle replenishment *after* the removal task completes successfully
+    // If items were removed and replenishment is enabled, handle replenishment
+    // within the same queue to maintain operation order
     if (removedCount > 0 && replenish && this.overfetchCache) {
       // Get replacements from the cache
       const replacements = this.overfetchCache.getReplacements(removedCount);
       
       if (replacements.length > 0) {
+        // Create a replenishment operation within the same queue
         const replenishOpId = `${operationId}_replenish`;
         
-        // Start replenishment but don't await it - allow the function to return immediately
-        Promise.resolve().then(() => {
-          return this._queue.add(() => {
+        try {
+          // Enqueue the replenishment operation in the same queue
+          await this._queue.add(() => {
             const pkField = this.ModelClass?.primaryKeyField || 'id';
             const existingIds = new Set(this.dataArray.map(item => item[pkField]));
             const uniqueReplacements = replacements.filter(item => !existingIds.has(item[pkField]));
@@ -271,16 +273,17 @@ export class OperationsManager {
             }
             return 0;
           });
-        }).catch(replenishError => {
+        } catch (replenishError) {
           // Log replenishment errors but don't fail the entire operation
           console.error(`Error during replenishment for ${operationId}:`, replenishError);
-        });
+        }
       }
     }
 
     // Return the count of removed items
     return removedCount;
   }
+
 
   /**
    * Rolls back an operation by enqueueing the rollback action.
