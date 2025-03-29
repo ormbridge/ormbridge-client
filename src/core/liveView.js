@@ -721,6 +721,12 @@ export class LiveQuerySet {
         );
       }
 
+      // experiment
+      setTimeout(() => {
+        // Your code here
+        console.log("Test if the issue is delayed cache propagation");
+      }, 100);
+
       // Use the operations manager to remove items matching the filter from main array
       const deletedCount = this.operationsManager.remove(
         operationId,
