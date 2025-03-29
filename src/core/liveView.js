@@ -218,13 +218,13 @@ export const handleModelEvent = async (event) => {
         case EventType.CREATE: {
           const pkValue = event[pkField];
           const createModel = await lqs.qs.get({ [pkField]: pkValue });
-          lqs.handleExternalCreateEvent(createModel, event.operationId);
+          await lqs.handleExternalCreateEvent(createModel, event.operationId);
           break;
         }
         case EventType.UPDATE: {
           const pkValue = event[pkField];
           const updateModel = await lqs.qs.first({ [pkField]: pkValue });
-          lqs.handleExternalUpdateEvent(updateModel, event.operationId, pkValue);
+          await lqs.handleExternalUpdateEvent(updateModel, event.operationId, pkValue);
           break;
         }
         case EventType.DELETE: {
@@ -239,7 +239,7 @@ export const handleModelEvent = async (event) => {
         }
         case EventType.BULK_DELETE: {
           const fieldName = pk_field_name || pkField;
-          lqs.handleExternalBulkDeleteEvent(instances, fieldName, event.operationId);
+          await lqs.handleExternalBulkDeleteEvent(instances, fieldName, event.operationId);
           break;
         }
       }
@@ -443,7 +443,7 @@ export class LiveQuerySet {
     
     if (ghostItems.length > 0) {
       // Use the operations manager to remove ghost items
-      this.operationsManager.remove(
+      await this.operationsManager.remove(
         operationId,
         (item) => !remotePkSet.has(item[pkField]) && !this.createdItems.has(item[pkField]),
         false,
@@ -525,7 +525,7 @@ export class LiveQuerySet {
       // Use the operations manager to completely replace the data
       // Generate a unique operation ID for this refresh
       const refreshOpId = `refresh_${Date.now()}`;
-      this.operationsManager.applyMutation(
+      await this.operationsManager.applyMutation(
         refreshOpId,
         (draft) => {
           draft.length = 0;
@@ -704,7 +704,7 @@ export class LiveQuerySet {
     return await withOperationId(async (operationId) => {
       // Clear the cached items that match the filter FIRST
       if (this.overfetchCache) {
-          this.operationsManager.removeFromCache(operationId, this.filterFn);
+         await this.operationsManager.removeFromCache(operationId, this.filterFn);
       }
 
       // Get the items to be deleted for proper rollback
@@ -715,7 +715,7 @@ export class LiveQuerySet {
       }
 
       // Use the operations manager to remove items matching the filter from main array
-      const deletedCount = this.operationsManager.remove(
+      const deletedCount = await this.operationsManager.remove(
         operationId,
         this.filterFn
       );
@@ -743,9 +743,9 @@ export class LiveQuerySet {
       } catch (error) {
         // Rollback using the operations manager for both main array and cache
         this._notifyError(error, "delete");
-        this.operationsManager.rollback(operationId);
+        await this.operationsManager.rollback(operationId);
         if (this.overfetchCache) {
-          this.operationsManager.rollbackCache(operationId);
+          await this.operationsManager.rollbackCache(operationId);
         }
 
         // Re-throw to be caught by the outer try/catch
@@ -775,11 +775,11 @@ export class LiveQuerySet {
       if (isAtLimit && useFixedPageSize && this.insertBehavior.local === 'append') {
         // This item would overflow the main array, so put it in the cache
         if (this.overfetchCache) {
-          this.operationsManager.insertToCache(operationId, optimisticItem);
+          await this.operationsManager.insertToCache(operationId, optimisticItem);
         }
       } else {
         // Normal case - insert to main array
-        this.operationsManager.insert(operationId, optimisticItem, {
+        await this.operationsManager.insert(operationId, optimisticItem, {
           position: this.insertBehavior.local,
           limit: this._serializerOptions?.limit,
           fixedPageSize: useFixedPageSize,
@@ -803,7 +803,7 @@ export class LiveQuerySet {
                         this.overfetchCache.cacheItems.some(item => item[pkField] === operationId);
         if (isInCache) {
           // Update the item in the cache
-          this.operationsManager.applyMutationToCache(
+          await this.operationsManager.applyMutationToCache(
             `${operationId}_update_cache`,
             (draft) => {
               const index = draft.findIndex(item => item[pkField] === operationId);
@@ -815,7 +815,7 @@ export class LiveQuerySet {
         }
         if (isInMainArray) {
           // Update the temporary item with the real one in the main array
-          this.operationsManager.update(
+          await this.operationsManager.update(
             `${operationId}_update`,
             (item) => item[pkField] === operationId,
             createdItem
@@ -828,9 +828,9 @@ export class LiveQuerySet {
         this._notifyError(error, "create");
 
         // Roll back the optimistic update in both main array and cache
-        this.operationsManager.rollback(operationId);
+        await this.operationsManager.rollback(operationId);
         if (this.overfetchCache) {
-          this.operationsManager.rollbackCache(operationId);
+          await this.operationsManager.rollbackCache(operationId);
         }
 
         throw error;
@@ -852,7 +852,7 @@ export class LiveQuerySet {
 
     return await withOperationId(async (operationId) => {
       // Apply updates to the main array
-      const updateCount = this.operationsManager.update(
+      const updateCount = await this.operationsManager.update(
         operationId,
         this.filterFn,
         updates
@@ -869,7 +869,7 @@ export class LiveQuerySet {
 
         if (updatedIds.length > 0) {
           // Apply the same updates to any matching items in the cache
-          this.operationsManager.applyMutationToCache(
+          await this.operationsManager.applyMutationToCache(
             operationId,
             (draft) => {
               const updateSet = new Set(updatedIds);
@@ -913,9 +913,9 @@ export class LiveQuerySet {
         this._notifyError(error, "update");
         
         // Rollback both main array and cache
-        this.operationsManager.rollback(operationId);
+        await this.operationsManager.rollback(operationId);
         if (this.overfetchCache) {
-          this.operationsManager.rollbackCache(operationId);
+          await this.operationsManager.rollbackCache(operationId);
         }
         
         throw error;
@@ -952,7 +952,7 @@ export class LiveQuerySet {
       );
       if (!exists) {
         const operationId = `get_${Date.now()}`;
-        this.operationsManager.insert(operationId, freshItem, {
+        await this.operationsManager.insert(operationId, freshItem, {
           position: this.insertBehavior.remote,
           limit: this._serializerOptions?.limit,
           fixedPageSize: this.options.fixedPageSize || this.options.strictMode,
@@ -1009,7 +1009,7 @@ export class LiveQuerySet {
       const notFoundPKs = new Set(updatedMap.keys());
       
       // Update existing items
-      this.operationsManager.applyMutation(
+      await this.operationsManager.applyMutation(
         operationId,
         (draft) => {
           for (let i = 0; i < draft.length; i++) {
@@ -1027,7 +1027,7 @@ export class LiveQuerySet {
       
       // Remove items that no longer match the filter
       if (existingItemsToRemove.length > 0) {
-        this.operationsManager.remove(
+        await this.operationsManager.remove(
           operationId,
           (x) => existingItemsToRemove.includes(x[pkField])
         );
@@ -1065,7 +1065,7 @@ export class LiveQuerySet {
     const newItems = filteredItems.filter(item => !existingIds.has(item[pkField]));
     
     if (newItems.length > 0) {
-      this.operationsManager.insert(operationId, newItems, {
+      await this.operationsManager.insert(operationId, newItems, {
         position: this.insertBehavior.remote,
         limit: this._serializerOptions?.limit,
         fixedPageSize: this.options.fixedPageSize || this.options.strictMode,
@@ -1078,7 +1078,7 @@ export class LiveQuerySet {
    * @param {Array<string|number>} instanceIds - Array of primary key values.
    * @param {string} [pkField] - Primary key field name.
    */
-  handleExternalBulkDeleteEvent(
+  async handleExternalBulkDeleteEvent(
     instanceIds,
     pkField = this.ModelClass.primaryKeyField,
     operationId
@@ -1090,7 +1090,7 @@ export class LiveQuerySet {
     const deletedIdsSet = new Set(instanceIds);
 
     // Use the operations manager to remove items with matching IDs
-    const deletedCount = this.operationsManager.remove(operationId, (item) =>
+    const deletedCount = await this.operationsManager.remove(operationId, (item) =>
       deletedIdsSet.has(item[pkField])
     );
 
@@ -1104,7 +1104,7 @@ export class LiveQuerySet {
    * Handles an external create event.
    * @param {Object} item - The created item.
    */
-  handleExternalCreateEvent(item, operationId) {
+  async handleExternalCreateEvent(item, operationId) {
     // Skip if the item was created by an active operation
     if (item.operationId && activeOperationIds.has(item.operationId)) {
       return;
@@ -1129,7 +1129,7 @@ export class LiveQuerySet {
     }
 
     // Insert the new item
-    this.operationsManager.insert(operationId, item, {
+    await this.operationsManager.insert(operationId, item, {
       position: this.insertBehavior.remote,
       limit: this._serializerOptions?.limit,
       fixedPageSize: this.options.fixedPageSize || this.options.strictMode,
@@ -1142,7 +1142,7 @@ export class LiveQuerySet {
    * @param {string} operationId - The operation identifier.
    * @param {string|number} primaryKey - The primary key of the item.
    */
-  handleExternalUpdateEvent(item, operationId, primaryKey) {
+  async handleExternalUpdateEvent(item, operationId, primaryKey) {
     const pkField = this.ModelClass.primaryKeyField || "id";
     
     // Get the primary key value either from the item or from the parameter
@@ -1154,7 +1154,7 @@ export class LiveQuerySet {
     if (index !== -1) {
       if (item) {
         // Item exists and we have the updated version, update it
-        this.operationsManager.update(
+        await this.operationsManager.update(
           operationId,
           (x) => x[pkField] === pkValue,
           item
@@ -1162,7 +1162,7 @@ export class LiveQuerySet {
       } else {
         // If it was created in this lqs - item gets a stay of execution
         if (!this.createdItems.has(pkValue)){
-          this.operationsManager.remove(
+          await this.operationsManager.remove(
             operationId,
             (x) => x[pkField] === pkValue
           );
@@ -1178,7 +1178,7 @@ export class LiveQuerySet {
    * Handles an external delete event.
    * @param {number|string} itemId - The primary key value of the deleted item.
    */
-  handleExternalDeleteEvent(itemId, operationId) {
+  async handleExternalDeleteEvent(itemId, operationId) {
     if (activeOperationIds.has(itemId)) {
       return;
     }
@@ -1186,7 +1186,7 @@ export class LiveQuerySet {
     const pkField = this.ModelClass.primaryKeyField || "id";
 
     // Remove the item with the given ID
-    this.operationsManager.remove(
+    await this.operationsManager.remove(
       operationId,
       (item) => item[pkField] === itemId
     );
