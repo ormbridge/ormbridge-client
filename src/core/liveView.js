@@ -423,6 +423,9 @@ export class LiveQuerySet {
   async removeGhosts(operationId) {
     const pkField = this.ModelClass.primaryKeyField || "id";
     if (this.dataArray.length === 0) return [];
+
+    // Trigger a refresh of the cache
+    this.overfetchCache.reset()
     
     // Fetch only the primary key field from the remote items
     const remoteItems = await this._findRootQuerySet().fetch({ fields: [pkField], limit: null });
@@ -736,14 +739,7 @@ export class LiveQuerySet {
         throw error;
       }
 
-      // In case there were ghost items in the overfetch cache
-      if (deletedCount > 1) {
-        setTimeout(() => {
-          this.removeGhosts().catch(err => 
-            console.error("Error removing ghosts after bulk delete:", err)
-          );
-        }, 500);
-      }
+      await this.removeGhosts();
 
       return deletedCount;
     });
@@ -1023,11 +1019,7 @@ export class LiveQuerySet {
 
     // In case there were ghost items in the overfetch cache
     if (deletedCount > 1) {
-      setTimeout(() => {
-        this.removeGhosts().catch(err => 
-          console.error("Error removing ghosts after bulk delete:", err)
-        );
-      }, 500);
+      this.removeGhosts()
     }
   }
 
