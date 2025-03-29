@@ -601,12 +601,11 @@ describe('LiveView Edge Cases Tests', () => {
       await wait(50); // Small wait between creates
     }
     
-    // Create LiveQuerySet with fixedPageSize and limit=3
+    // Create LiveQuerySet with limit=3
     const liveQs = await liveView(
       DummyModel.objects.all().orderBy('-id'), // Most recent first
       {
-        serializer: { limit: 3, offset: 0 },
-        fixedPageSize: true
+        serializer: { limit: 3, offset: 0 }
       }
     );
     

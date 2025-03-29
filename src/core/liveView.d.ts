@@ -17,15 +17,6 @@ export interface SerializerOptions {
    */
   export interface LiveQuerySetOptions {
     /**
-     * @deprecated Use fixedPageSize instead.
-     * Indicates whether strict mode is enabled.
-     */
-    strictMode?: boolean;
-    /**
-     * Fixed page size keeps the page size constant by removing items when new ones are added.
-     */
-    fixedPageSize?: boolean;
-    /**
      * Custom operation ID generator function.
      */
     operationIdGenerator?: () => string;

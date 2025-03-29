@@ -443,19 +443,18 @@ describe('LiveView E2E Tests', () => {
     await wait(200);
   });
 
-  it('should handle optimistic create with fixed page size', async () => {
+  it('should handle optimistic create with limited page size', async () => {
     // Create initial data - 3 items
     for (let i = 1; i <= 3; i++) {
       await DummyModel.objects.create({ name: `Initial ${i}`, value: i * 10 });
       await wait(50); // Small wait between creates
     }
     
-    // Create LiveQuerySet with fixedPageSize and limit=3 using the new options format
+    // Create LiveQuerySet with limit=3 using the new options format
     const liveQs = await liveView(
       DummyModel.objects.all(),
       {
         serializer: { limit: 3, offset: 0 },
-        fixedPageSize: true
       }
     );
     
