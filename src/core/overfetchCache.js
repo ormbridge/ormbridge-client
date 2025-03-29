@@ -99,7 +99,8 @@ export class OverfetchCache {
    */
   handleModelEvent(eventType, pkValues) {
     // Always check if we have a cache to work with
-    if (!this.mainDataArray || !this.limit) return;
+    if (!this.mainDataArray || !this.limit)
+        return;
     
     // Normalize pkValues to an array and convert to a Set for fast lookups
     const pkArray = Array.isArray(pkValues) ? pkValues : [pkValues];
@@ -107,33 +108,32 @@ export class OverfetchCache {
     
     // For create events, refresh if cache isn't full
     if (eventType === EventType.CREATE) {
-      if (this.cacheItems.length < this.cacheSize) {
-        // Refresh the cache to potentially include the new items
-        setTimeout(() => this.refreshCache(), 0);
-      }
-      return;
+        if (this.cacheItems.length < this.cacheSize) {
+            // Refresh the cache to potentially include the new items
+            setTimeout(() => this.refreshCache(), 0);
+        }
+        return;
     }
     
     // For update or delete events, check if they affect our cached items
-    if (eventType === EventType.UPDATE || eventType === EventType.DELETE) {
-      // Check if any of our cached items are affected using the set
-      const isCacheAffected = this.cacheItems.some(item => 
-        pkSet.has(item[this.primaryKeyField])
-      );
-
-      // If it's a delete, remove the affected items immediately
-      if (eventType === EventType.DELETE) {
-        this.cacheItems = this.cacheItems.filter(
-          item => !pkSet.has(item[this.primaryKeyField])
-        );
-      }
-      
-      // If cache is affected, refresh it
-      if (isCacheAffected) {
-        setTimeout(() => this.refreshCache(), 0);
-      }
-      
-      return;
+    if (eventType === EventType.BULK_UPDATE || eventType === EventType.UPDATE || 
+        eventType === EventType.DELETE || eventType === EventType.BULK_DELETE) {
+        
+        // Check if any of our cached items are affected using the set
+        const isCacheAffected = this.cacheItems.some(item => 
+            pkSet.has(item[this.primaryKeyField]));
+        
+        // If it's a delete or bulk delete, remove the affected items immediately
+        if (eventType === EventType.DELETE || eventType === EventType.BULK_DELETE) {
+            this.cacheItems = this.cacheItems.filter(item => 
+                !pkSet.has(item[this.primaryKeyField]));
+        }
+        
+        // If cache is affected, refresh it
+        if (isCacheAffected) {
+            setTimeout(() => this.refreshCache(), 0);
+        }
+        return;
     }
   }
 

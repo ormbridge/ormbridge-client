@@ -178,12 +178,6 @@ export const handleModelEvent = async (event) => {
       console.error("Error refreshing metrics:", error)
     );
 
-    // Skip handling if this event was initiated by this operation
-    if (activeOperationIds.has(event.operationId)) continue;
-
-    // Skip handling if this is not the root liveqs
-    if (lqs.parent) continue;
-
     // Notify the overfetch cache about this event first
     if (lqs.overfetchCache) {
       try {        
@@ -197,6 +191,12 @@ export const handleModelEvent = async (event) => {
         console.error("Error handling model event in overfetch cache:", error);
       }
     }
+
+    // Skip handling if this event was initiated by this operation
+    if (activeOperationIds.has(event.operationId)) continue;
+
+    // Skip handling if this is not the root liveqs
+    if (lqs.parent) continue;
 
     const pkField = lqs.ModelClass.primaryKeyField;
     const isBulkEvent = [EventType.BULK_UPDATE, EventType.BULK_DELETE].includes(
