@@ -763,79 +763,68 @@ export class LiveQuerySet {
    * @param {Object} item - The item data.
    * @returns {Promise<Object>} The created item.
    */
-  // Modify the create method to handle optimistic operations with cache
   async create(item) {
-    return await withOperationId(async (operationId) => {
-      const optimisticItem = Object.assign({}, item, { id: operationId });
-      const isAtLimit = this._serializerOptions?.limit && 
-                        this.dataArray.length >= this._serializerOptions.limit;
-      const useFixedPageSize = this.options.fixedPageSize || this.options.strictMode;
-      
-      // Based on our position and limit, decide where to place the optimistic item
-      if (isAtLimit && useFixedPageSize && this.insertBehavior.local === 'append') {
-        // This item would overflow the main array, so put it in the cache
-        if (this.overfetchCache) {
-          this.operationsManager.insertToCache(operationId, optimisticItem);
-        }
-      } else {
-        // Normal case - insert to main array
-        this.operationsManager.insert(operationId, optimisticItem, {
-          position: this.insertBehavior.local,
-          limit: this._serializerOptions?.limit,
-          fixedPageSize: useFixedPageSize,
-        });
-      }
-
-      try {
-        const result = await this.qs.executeQuery({
-          type: "create",
-          data: item,
-          operationId,
-          namespace: this.namespace,
-        });
-
-        const createdItem = new this.ModelClass(result.data);
-        const pkField = this.ModelClass.primaryKeyField || "id";
-
-        // Check if the optimistic item is in the main array or cache
-        const isInMainArray = this.dataArray.some(item => item[pkField] === operationId);
-        const isInCache = this.overfetchCache && 
-                        this.overfetchCache.cacheItems.some(item => item[pkField] === operationId);
-        if (isInCache) {
-          // Update the item in the cache
-          this.operationsManager.applyMutationToCache(
-            `${operationId}_update_cache`,
-            (draft) => {
-              const index = draft.findIndex(item => item[pkField] === operationId);
-              if (index !== -1) {
-                draft[index] = createdItem;
+      return await withOperationId(async (operationId) => {
+          const optimisticItem = Object.assign({}, item, { id: operationId });
+          const isAtLimit = this._serializerOptions?.limit &&
+              this.dataArray.length >= this._serializerOptions.limit;
+          const useFixedPageSize = this.options.fixedPageSize || this.options.strictMode;
+          // Based on our position and limit, decide where to place the optimistic item
+          if (isAtLimit && useFixedPageSize && this.overfetchCache) {
+              if (this.insertBehavior.local === 'append'){
+                  this.operationsManager.insertToCache(operationId, optimisticItem);
+              } else {
+                  let lastItem = this.dataArray[this.dataArray.length - 1]
+                  this.operationsManager.insertToCache(operationId, lastItem)
               }
-            }
-          );
-        }
-        if (isInMainArray) {
-          // Update the temporary item with the real one in the main array
-          this.operationsManager.update(
-            `${operationId}_update`,
-            (item) => item[pkField] === operationId,
-            createdItem
-          );
-        } 
-        
-        this.createdItems.add(createdItem[pkField]);
-        return createdItem;
-      } catch (error) {
-        this._notifyError(error, "create");
+          }
+          
+          // Now add the item to the case
+          this.operationsManager.insert(operationId, optimisticItem, {
+              position: this.insertBehavior.local,
+              limit: this._serializerOptions?.limit,
+              fixedPageSize: useFixedPageSize,
+          });
 
-        // Roll back the optimistic update in both main array and cache
-        this.operationsManager.rollback(operationId);
-        if (this.overfetchCache) {
-          this.operationsManager.rollbackCache(operationId);
-        }
-
-        throw error;
-      }
-    });
+          try {
+              const result = await this.qs.executeQuery({
+                  type: "create",
+                  data: item,
+                  operationId,
+                  namespace: this.namespace,
+              });
+              const createdItem = new this.ModelClass(result.data);
+              const pkField = this.ModelClass.primaryKeyField || "id";
+              // Check if the optimistic item is in the main array or cache
+              const isInMainArray = this.dataArray.some(item => item[pkField] === operationId);
+              const isInCache = this.overfetchCache &&
+                  this.overfetchCache.cacheItems.some(item => item[pkField] === operationId);
+              if (isInCache) {
+                  // Update the item in the cache
+                  this.operationsManager.applyMutationToCache(`${operationId}_update_cache`, (draft) => {
+                      const index = draft.findIndex(item => item[pkField] === operationId);
+                      if (index !== -1) {
+                          draft[index] = createdItem;
+                      }
+                  });
+              }
+              if (isInMainArray) {
+                  // Update the temporary item with the real one in the main array
+                  this.operationsManager.update(`${operationId}_update`, (item) => item[pkField] === operationId, createdItem);
+              }
+              this.createdItems.add(createdItem[pkField]);
+              return createdItem;
+          }
+          catch (error) {
+              this._notifyError(error, "create");
+              // Roll back the optimistic update in both main array and cache
+              this.operationsManager.rollback(operationId);
+              if (this.overfetchCache) {
+                  this.operationsManager.rollbackCache(operationId);
+              }
+              throw error;
+          }
+      });
   }
 
   /**
