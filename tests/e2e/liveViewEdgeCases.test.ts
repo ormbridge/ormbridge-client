@@ -15,7 +15,7 @@ import { EventType } from '../../src/core/eventReceivers';
 
 // Use same test configuration as in the main tests
 const testConfig = {
-  API_URL: 'http://127.0.0.1:8000/ormbridge',
+  API_URL: 'http://127.0.0.1:8000/statezero',
   GENERATED_TYPES_DIR: './models/backend1',
   getAuthHeaders: () => ({
     'Authorization': 'Token testtoken123'
@@ -27,7 +27,7 @@ const testConfig = {
         appKey: '31f0a279ab07525d29ba',
         cluster: 'eu',
         forceTLS: true,
-        authEndpoint: 'http://127.0.0.1:8000/ormbridge/events/auth/'
+        authEndpoint: 'http://127.0.0.1:8000/statezero/events/auth/'
       }
     }
   }

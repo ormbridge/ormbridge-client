@@ -512,7 +512,7 @@ async function generateSchemaForModel(backend, model) {
 
   const modulePath = process.env.NODE_ENV === 'test'
     ? '../../../src'
-    : '@ormbridge/core';
+    : '@statezero/core';
 
   const templateData = prepareTemplateData(
     modulePath,

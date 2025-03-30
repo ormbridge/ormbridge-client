@@ -398,6 +398,7 @@ describe('Permission and Custom PK Tests (non-admin user)', () => {
       // Verify that the related model's summary still shows the original representation.
       // For example, its repr field remains unchanged.
       if (typeof updated.custom_pk_related === 'object') {
+        console.log(JSON.stringify(updated.custom_pk_related))
         expect(updated.custom_pk_related.repr.str).toBe('CustomPK: Test Custom PK');
       }
     });

@@ -83,7 +83,7 @@ test.describe('Framework Adapter E2E Tests', () => {
     
     try {
       await page.goto(url);
-      await page.waitForSelector('.ormbridge-test');
+      await page.waitForSelector('.statezero-test');
 
       const initialCount = await page.locator('#item-count').innerText();
       await page.click('#add-item');

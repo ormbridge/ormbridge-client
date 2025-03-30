@@ -24,7 +24,7 @@ export function generateReactApp(testAppsDir) {
   execSync(`npm install`, { cwd: appDir, stdio: 'inherit' });
   
   // Install ORMBridge
-  execSync(`npm install github:ormbridge/ormbridge-client`, { cwd: appDir, stdio: 'inherit' });
+  execSync(`npm install github:statezero/statezero-client`, { cwd: appDir, stdio: 'inherit' });
   
   // Create src directory structure
   const srcDir = path.join(appDir, 'src');
@@ -43,9 +43,9 @@ export function generateReactApp(testAppsDir) {
   // Create ORMBridge config in src folder with proper configuration
   createORMBridgeConfig(srcDir);
   
-  // Run ormbridge sync-models command - models will be generated in src/models now
+  // Run statezero sync-models command - models will be generated in src/models now
   console.log('Syncing models...');
-  execSync('npx ormbridge sync-models', { cwd: appDir, stdio: 'inherit' });
+  execSync('npx statezero sync-models', { cwd: appDir, stdio: 'inherit' });
   
   // Create test component AFTER models are generated
   createReactTestComponent(appDir);
@@ -64,7 +64,7 @@ function createReactTestComponent(appDir) {
   // Create ORMBridgeTest.tsx with the proper import path to the generated models
   const testComponent = `
 import React from 'react';
-import { useReactLiveView } from '@ormbridge/core';
+import { useReactLiveView } from '@statezero/core';
 import { DummyModel } from '../models/backend1'
 
 function ORMBridgeTest() {
@@ -90,7 +90,7 @@ function ORMBridgeTest() {
   };
   
   return (
-    <div className="ormbridge-test">
+    <div className="statezero-test">
       <h1>ORMBridge React Test</h1>
       
       <div className="controls">
@@ -115,7 +115,7 @@ function ORMBridgeTest() {
       </div>
       
       <style>{\`
-        .ormbridge-test {
+        .statezero-test {
           font-family: Arial, sans-serif;
           max-width: 800px;
           margin: 0 auto;
@@ -155,7 +155,7 @@ function ORMBridgeTest() {
           background-color: #f9f9f9;
         }
 
-        .ormbridge-error {
+        .statezero-error {
           font-family: Arial, sans-serif;
           max-width: 800px;
           margin: 0 auto;
@@ -200,8 +200,8 @@ function updateReactEntryPoint(appDir) {
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
-import config from './ormbridge.config.js';
-import { configInstance } from '@ormbridge/core';
+import config from './statezero.config.js';
+import { configInstance } from '@statezero/core';
 import App from './App';
 
 async function init() {

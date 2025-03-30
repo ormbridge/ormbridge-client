@@ -15,7 +15,7 @@ export function createORMBridgeConfig(appDir) {
 export default {
   backendConfigs: {
     default: {
-      API_URL: 'http://127.0.0.1:8000/ormbridge',
+      API_URL: 'http://127.0.0.1:8000/statezero',
       GENERATED_TYPES_DIR: './models/backend1',
       getAuthHeaders: () => ({
         'Authorization': 'Token testtoken123'
@@ -30,14 +30,14 @@ export default {
             appKey: '31f0a279ab07525d29ba',
             cluster: 'eu',
             forceTLS: true,
-            authEndpoint: 'http://127.0.0.1:8000/ormbridge/events/auth/'
+            authEndpoint: 'http://127.0.0.1:8000/statezero/events/auth/'
           }
         }
       }
     },
     
     microservice: {
-      API_URL: 'http://127.0.0.1:8000/ormbridge',
+      API_URL: 'http://127.0.0.1:8000/statezero',
       GENERATED_TYPES_DIR: './models/backend2',
       getAuthHeaders: () => ({
         'Authorization': 'Bearer your_microservice_token'
@@ -52,7 +52,7 @@ export default {
             appKey: '31f0a279ab07525d29ba',
             cluster: 'eu',
             forceTLS: true,
-            authEndpoint: 'http://127.0.0.1:8000/ormbridge/events/auth/'
+            authEndpoint: 'http://127.0.0.1:8000/statezero/events/auth/'
           }
         }
       }
@@ -61,7 +61,7 @@ export default {
 };`;
   
   // Write config file as a standard js file (.js)
-  writeFile(path.join(appDir, 'ormbridge.config.js'), configContent);
+  writeFile(path.join(appDir, 'statezero.config.js'), configContent);
   console.log('✅ ORMBridge config created successfully');
 }
 

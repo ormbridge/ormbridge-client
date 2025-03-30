@@ -18,14 +18,14 @@ export function generateVueApp(testAppsDir) {
   execSync(`cd "${parentDir}" && npm create vue@latest ${appDirName} -- --default`, { stdio: 'inherit', shell: true });
 
   // Install ORMBridge
-  execSync(`npm install github:ormbridge/ormbridge-client`, { cwd: appDir, stdio: 'inherit' });
+  execSync(`npm install github:statezero/statezero-client`, { cwd: appDir, stdio: 'inherit' });
 
   // Create ORMBridge config
   createORMBridgeConfig(appDir);
 
-  // Run ormbridge sync-models command
+  // Run statezero sync-models command
   console.log('Syncing models...');
-  execSync('npx ormbridge sync-models', { cwd: appDir, stdio: 'inherit' });
+  execSync('npx statezero sync-models', { cwd: appDir, stdio: 'inherit' });
 
   // Create test component
   createVueTestComponent(appDir);
@@ -41,7 +41,7 @@ function createVueTestComponent(appDir) {
   // Create ORMBridgeTest.vue
   const testComponent = `
 <template>
-  <div class="ormbridge-test">
+  <div class="statezero-test">
     <h1>ORMBridge Vue Test</h1>
     
     <div class="controls">
@@ -64,7 +64,7 @@ function createVueTestComponent(appDir) {
 
 <script>
 import { defineComponent, ref, shallowRef } from 'vue';
-import { createVueLiveView } from '@ormbridge/core';
+import { createVueLiveView } from '@statezero/core';
 import { DummyModel } from '../../models/backend1';
 
 export default defineComponent({
@@ -121,7 +121,7 @@ export default defineComponent({
 </script>
 
 <style scoped>
-.ormbridge-test {
+.statezero-test {
   font-family: Arial, sans-serif;
   max-width: 800px;
   margin: 0 auto;
@@ -198,8 +198,8 @@ function updateVueMain(appDir) {
   const mainFilePath = path.join(appDir, 'src', 'main.js');
   const mainContent = `
 import './assets/main.css';
-import config from '../ormbridge.config.js';
-import { configInstance } from '@ormbridge/core';
+import config from '../statezero.config.js';
+import { configInstance } from '@statezero/core';
 import { createApp } from 'vue';
 import App from './App.vue';
 

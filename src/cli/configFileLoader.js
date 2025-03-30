@@ -4,17 +4,17 @@ import { configInstance } from '../config.js';
 /**
  * Loads configuration from file using cosmiconfig and sets it into the global config singleton.
  *
- * The function searches for a configuration file (e.g. ormbridge.config.js, .modelsynrc, etc.)
+ * The function searches for a configuration file (e.g. statezero.config.js, .modelsynrc, etc.)
  * and checks if an environment variable (ORMBRIDGE_CONFIG_PATH) overrides the default search path.
  * If a configuration file is found, it is validated and set via configInstance.setConfig().
  *
  * @returns {void}
  */
 export function loadConfigFromFile() {
-  const explorerSync = cosmiconfigSync('ormbridge', {
+  const explorerSync = cosmiconfigSync('statezero', {
     searchPlaces: [
-      'ormbridge.config.js',
-      'src/ormbridge.config.js',
+      'statezero.config.js',
+      'src/statezero.config.js',
       '.modelsynrc',
       '.modelsynrc.json',
       '.modelsynrc.yaml',
@@ -85,7 +85,7 @@ export function loadConfigFromFile() {
   }
   
   if (!result) {
-    console.log('Searching for ormbridge configuration files...');
+    console.log('Searching for statezero configuration files...');
     result = explorerSync.search();
   }
   
