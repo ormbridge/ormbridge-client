@@ -1,5 +1,5 @@
 {
-  "name": "@ormbridge/core",
+  "name": "@statezero/core",
   "version": "0.1.0",
   "type": "module",
   "module": "ESNext",
@@ -58,14 +58,14 @@
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ormbridge/ormbridge.git"
+    "url": "https://github.com/state-zero/statezero-client.git"
   },
   "files": [
     "dist",
     "LICENSE",
     "README.md"
   ],
-  "homepage": "https://ormbridge.com",
+  "homepage": "https://www.statezero.dev",
   "dependencies": {
     "axios": "^1.7.9",
     "cli-progress": "^3.12.0",
