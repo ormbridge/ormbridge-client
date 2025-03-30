@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "module": "ESNext",
-  "description": "The type-safe frontend client for ORMBridge - connect directly to your backend models with zero boilerplate",
+  "description": "The type-safe frontend client for StateZero - connect directly to your backend models with zero boilerplate",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {

@@ -6,7 +6,7 @@ import { ProductCategory } from '../../models/backend1/django_app/productcategor
 import { setBackendConfig } from '../../src/config';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader'
 
-describe('ORMBridge Custom Features Integration Tests', () => {
+describe('StateZero Custom Features Integration Tests', () => {
   let originalConfig: any;
 
   beforeAll(async () => {

@@ -23,7 +23,7 @@ export function generateReactApp(testAppsDir) {
   // Install dependencies
   execSync(`npm install`, { cwd: appDir, stdio: 'inherit' });
   
-  // Install ORMBridge
+  // Install StateZero
   execSync(`npm install github:statezero/statezero-client`, { cwd: appDir, stdio: 'inherit' });
   
   // Create src directory structure
@@ -37,10 +37,10 @@ export function generateReactApp(testAppsDir) {
   // Create a placeholder README in the models directory to ensure it exists
   writeFile(
     path.join(backend1Dir, 'README.md'), 
-    '# ORMBridge Generated Models\n\nThis directory will contain auto-generated models from the ORMBridge library.'
+    '# StateZero Generated Models\n\nThis directory will contain auto-generated models from the StateZero library.'
   );
   
-  // Create ORMBridge config in src folder with proper configuration
+  // Create StateZero config in src folder with proper configuration
   createORMBridgeConfig(srcDir);
   
   // Run statezero sync-models command - models will be generated in src/models now
@@ -50,7 +50,7 @@ export function generateReactApp(testAppsDir) {
   // Create test component AFTER models are generated
   createReactTestComponent(appDir);
   
-  // Update React entry point to register ORMBridge config
+  // Update React entry point to register StateZero config
   updateReactEntryPoint(appDir);
 
   // Update tsconfig.json for better compatibility
@@ -91,7 +91,7 @@ function ORMBridgeTest() {
   
   return (
     <div className="statezero-test">
-      <h1>ORMBridge React Test</h1>
+      <h1>StateZero React Test</h1>
       
       <div className="controls">
         <button id="add-item" onClick={addItem} disabled={isLoading || !liveQuery}>Add Item</button>

@@ -17,10 +17,10 @@ export function generateVueApp(testAppsDir) {
   // Execute Vue CLI in parent directory with relative path
   execSync(`cd "${parentDir}" && npm create vue@latest ${appDirName} -- --default`, { stdio: 'inherit', shell: true });
 
-  // Install ORMBridge
+  // Install StateZero
   execSync(`npm install github:statezero/statezero-client`, { cwd: appDir, stdio: 'inherit' });
 
-  // Create ORMBridge config
+  // Create StateZero config
   createORMBridgeConfig(appDir);
 
   // Run statezero sync-models command
@@ -42,7 +42,7 @@ function createVueTestComponent(appDir) {
   const testComponent = `
 <template>
   <div class="statezero-test">
-    <h1>ORMBridge Vue Test</h1>
+    <h1>StateZero Vue Test</h1>
     
     <div class="controls">
       <button id="add-item" @click="addItem" :disabled="isLoading || !liveQuery">Add Item</button>
@@ -173,7 +173,7 @@ button:disabled {
         <ORMBridgeTest />
       </template>
       <template #fallback>
-        <div>Loading ORMBridge...</div>
+        <div>Loading StateZero...</div>
       </template>
     </Suspense>
   </div>

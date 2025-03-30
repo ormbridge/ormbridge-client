@@ -5,11 +5,11 @@ import pkg from 'fs-extra';
 const { ensureDirSync } = pkg;
 
 /**
- * Create ORMBridge configuration file as a CommonJS module.
+ * Create StateZero configuration file as a CommonJS module.
  * @param {string} appDir - The directory of the app
  */
 export function createORMBridgeConfig(appDir) {
-  console.log('Creating ORMBridge configuration...');
+  console.log('Creating StateZero configuration...');
   
   const configContent = `// Export the AppConfig object
 export default {
@@ -62,7 +62,7 @@ export default {
   
   // Write config file as a standard js file (.js)
   writeFile(path.join(appDir, 'statezero.config.js'), configContent);
-  console.log('✅ ORMBridge config created successfully');
+  console.log('✅ StateZero config created successfully');
 }
 
 /**

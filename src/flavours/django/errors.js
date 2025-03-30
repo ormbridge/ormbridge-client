@@ -12,7 +12,7 @@
  */
 
 /**
- * Base error class for ORMBridge errors.
+ * Base error class for StateZero errors.
  */
 export class ORMBridgeError extends Error {
   /**
