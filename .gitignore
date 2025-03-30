@@ -7,7 +7,7 @@ yarn-error.log
 package-lock.json
 
 # Config
-ormbridge.config.js
+statezero.config.js
 models/
 
 # Environment variables
