@@ -794,13 +794,10 @@ export class LiveQuerySet {
             )
           }
           
-          // Now add the item to the case - if it should be added
-          if (!isAtLimit){
-            this.operationsManager.insert(operationId, optimisticItem, {
-                position: this.insertBehavior.local,
-                limit: this._serializerOptions?.limit
-            });
-          }
+          this.operationsManager.insert(operationId, optimisticItem, {
+              position: this.insertBehavior.local,
+              limit: this._serializerOptions?.limit
+          });
 
           try {
               const result = await this.qs.executeQuery({
