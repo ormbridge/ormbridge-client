@@ -760,7 +760,6 @@ export class LiveQuerySet {
    * @returns {Promise<Object>} The created item.
    */
   async create(item) {
-    // TODO - creates that don't get added to the array need to trigger the optimistic metric update
       return await withOperationId(async (operationId) => {
           const optimisticItem = Object.assign({}, item, { id: operationId });
           const isAtLimit = this._serializerOptions?.limit &&
@@ -779,6 +778,11 @@ export class LiveQuerySet {
               }
           }
 
+          // Manually update the metric
+          if (isAtLimit) {
+              this._notify('create', [...originalArray, optimisticItem], [...originalArray], operationId, true);
+          }
+
           // Trigger the metric refresh manually because the ops manager won't
           if (isAtLimit) {
             MetricsManager.optimisticUpdate(
@@ -790,11 +794,13 @@ export class LiveQuerySet {
             )
           }
           
-          // Now add the item to the case
-          this.operationsManager.insert(operationId, optimisticItem, {
-              position: this.insertBehavior.local,
-              limit: this._serializerOptions?.limit
-          });
+          // Now add the item to the case - if it should be added
+          if (!isAtLimit){
+            this.operationsManager.insert(operationId, optimisticItem, {
+                position: this.insertBehavior.local,
+                limit: this._serializerOptions?.limit
+            });
+          }
 
           try {
               const result = await this.qs.executeQuery({
@@ -828,15 +834,9 @@ export class LiveQuerySet {
           catch (error) {
               this._notifyError(error, "create");
 
-              // Trigger the metric refresh rollback manually because the ops manager won't
+              // Undo the update of the metrics that we manually triggered to update
               if (isAtLimit) {
-                MetricsManager.optimisticUpdate(
-                  'delete',
-                  [...originalArray],
-                  [...originalArray, optimisticItem],
-                  this.activeMetrics,
-                  operationId
-                )
+                this._notify('delete', [...originalArray], [...originalArray, optimisticItem], operationId, true);
               }
               
               // Roll back the optimistic update in both main array and cache
