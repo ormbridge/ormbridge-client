@@ -24,7 +24,7 @@ export function generateReactApp(testAppsDir) {
   execSync(`npm install`, { cwd: appDir, stdio: 'inherit' });
   
   // Install StateZero
-  execSync(`npm install github:statezero/statezero-client`, { cwd: appDir, stdio: 'inherit' });
+  execSync(`npm install github:state-zero/statezero-client`, { cwd: appDir, stdio: 'inherit' });
   
   // Create src directory structure
   const srcDir = path.join(appDir, 'src');

@@ -18,7 +18,7 @@ export function generateVueApp(testAppsDir) {
   execSync(`cd "${parentDir}" && npm create vue@latest ${appDirName} -- --default`, { stdio: 'inherit', shell: true });
 
   // Install StateZero
-  execSync(`npm install github:statezero/statezero-client`, { cwd: appDir, stdio: 'inherit' });
+  execSync(`npm install github:state-zero/statezero-client`, { cwd: appDir, stdio: 'inherit' });
 
   // Create StateZero config
   createORMBridgeConfig(appDir);
