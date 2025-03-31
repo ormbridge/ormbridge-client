@@ -5,7 +5,7 @@ import { configInstance } from '../config.js';
  * Loads configuration from file using cosmiconfig and sets it into the global config singleton.
  *
  * The function searches for a configuration file (e.g. statezero.config.js, .modelsynrc, etc.)
- * and checks if an environment variable (ORMBRIDGE_CONFIG_PATH) overrides the default search path.
+ * and checks if an environment variable (STATEZERO_CONFIG_PATH) overrides the default search path.
  * If a configuration file is found, it is validated and set via configInstance.setConfig().
  *
  * @returns {void}
@@ -72,7 +72,7 @@ export function loadConfigFromFile() {
     }
   });
 
-  const envConfigPath = process.env.ORMBRIDGE_CONFIG_PATH;
+  const envConfigPath = process.env.STATEZERO_CONFIG_PATH;
   let result = null;
   
   if (envConfigPath) {
