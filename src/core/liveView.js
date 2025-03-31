@@ -760,6 +760,7 @@ export class LiveQuerySet {
    * @returns {Promise<Object>} The created item.
    */
   async create(item) {
+    // TODO - creates that don't get added to the array need to trigger the optimistic metric update
       return await withOperationId(async (operationId) => {
           const optimisticItem = Object.assign({}, item, { id: operationId });
           const isAtLimit = this._serializerOptions?.limit &&
@@ -777,14 +778,23 @@ export class LiveQuerySet {
                   this.operationsManager.insertToCache(operationId, lastItem)
               }
           }
+
+          // Trigger the metric refresh manually because the ops manager won't
+          if (isAtLimit) {
+            MetricsManager.optimisticUpdate(
+              'create',
+              [...originalArray, optimisticItem],
+              [...originalArray],
+              this.activeMetrics,
+              operationId
+            )
+          }
           
           // Now add the item to the case
           this.operationsManager.insert(operationId, optimisticItem, {
               position: this.insertBehavior.local,
               limit: this._serializerOptions?.limit
           });
-
-          let isInCache = false
 
           try {
               const result = await this.qs.executeQuery({
@@ -797,19 +807,10 @@ export class LiveQuerySet {
               const pkField = this.ModelClass.primaryKeyField || "id";
               // Check if the optimistic item is in the main array or cache
               const isInMainArray = this.dataArray.some(item => item[pkField] === operationId);
-              isInCache = this.overfetchCache &&
+              const isInCache = this.overfetchCache &&
                   this.overfetchCache.cacheItems.some(item => item[pkField] === operationId);
               if (isInCache) {
                   // Update the item in the cache
-                  const hypotheticalUpdatedArray = [...originalArray, optimisticItem];
-                  MetricsManager.optimisticUpdate(
-                    'create',
-                      hypotheticalUpdatedArray,
-                      originalArray,
-                      this.activeMetrics,
-                      operationId
-                  );
-                  
                   this.operationsManager.applyMutationToCache(`${operationId}_update_cache`, (draft) => {
                       const index = draft.findIndex(item => item[pkField] === operationId);
                       if (index !== -1) {
@@ -826,19 +827,18 @@ export class LiveQuerySet {
           }
           catch (error) {
               this._notifyError(error, "create");
-              
-              // Roll back the manually called optimistic update
-              if (isInCache){
-                const hypotheticalUpdatedArray = [...originalArray, optimisticItem]
-                const revertedMetricUpdates = MetricsManager.optimisticUpdate(
-                    'delete',
-                    originalArray,
-                    hypotheticalUpdatedArray,
-                    this.activeMetrics,
-                    operationId
-                );
-              }
 
+              // Trigger the metric refresh rollback manually because the ops manager won't
+              if (isAtLimit) {
+                MetricsManager.optimisticUpdate(
+                  'delete',
+                  [...originalArray],
+                  [...originalArray, optimisticItem],
+                  this.activeMetrics,
+                  operationId
+                )
+              }
+              
               // Roll back the optimistic update in both main array and cache
               this.operationsManager.rollback(operationId);
               if (this.overfetchCache) {
