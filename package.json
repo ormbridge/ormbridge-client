@@ -72,6 +72,7 @@
     "clone": "^2.1.2",
     "cosmiconfig": "^9.0.0",
     "cosmiconfig-typescript-loader": "^6.1.0",
+    "cuid": "^3.0.0",
     "dotenv": "^16.4.7",
     "fast-array-diff": "^1.1.0",
     "fs-extra": "^11.3.0",
