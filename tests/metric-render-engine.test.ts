@@ -983,214 +983,255 @@ describe('MetricRenderEngine Edge Cases', () => {
   });
 
   // --- Integration with QueryState ---
-  describe('MetricRenderEngine Integration with QueryState', () => {
-     // Uses metrics from outer scope
+describe('MetricRenderEngine Integration with QueryState', () => {
+  // Uses metrics from outer scope
 
-    test('should synchronize metrics during QueryState sync', async () => {
-       const countStrategy = new CountStrategy();
-       const sumStrategy = new SumStrategy();
-       const countMetricRender = new MetricRenderEngine(queryState, countMetric, countStrategy, renderEngine);
-       const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, sumStrategy, renderEngine);
+  test('should synchronize metrics during QueryState sync', async () => {
+    const countStrategy = new CountStrategy();
+    const sumStrategy = new SumStrategy();
+    const countMetricRender = new MetricRenderEngine(queryState, countMetric, countStrategy, renderEngine);
+    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, sumStrategy, renderEngine);
 
-       // Add operation
-       queryState.add({
-           type: 'create',
-           instances: [{ id: 4, name: 'Dave', salary: 70000 }]
-       });
+    // Set up test DB to track operations
+    const testDB = new SimpleDB(initialData);
 
-       // Initial optimistic values
-       const optimisticCount = countMetricRender.render(); // 3 + 1 = 4
-       const optimisticSum = sumMetricRender.render('salary'); // 260000 + 70000 = 330000
+    // Add operation
+    const newItem = { id: 4, name: 'Dave', salary: 70000 };
+    queryState.add({
+      type: 'create',
+      instances: [newItem]
+    });
+    testDB.create(newItem);
 
-       expect(optimisticCount).toBe(4);
-       expect(optimisticSum).toBe(330000);
+    // Verify optimistic values
+    expect(countMetricRender.render()).toBe(testDB.count());
+    expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
 
-       // Prepare updated data for sync
-       const updatedData = [...initialData, { id: 4, name: 'Dave', salary: 70000 }].map(i=>({...i}));
-       const newDb = new SimpleDB(updatedData);
+    // Prepare updated data for sync
+    const updatedData = [...initialData, newItem].map(i => ({...i}));
+    const newDb = new SimpleDB(updatedData);
 
-       // Update fetch mocks to return new ground truth *after* the operation is applied
-       fetchCountMock.mockResolvedValue(newDb.count()); // Should resolve to 4
-       fetchSumMock.mockResolvedValue(newDb.sum('salary')); // Should resolve to 330000
-       // Mock the main ground truth fetch as well
-       queryState.fetchGroundTruth = vi.fn().mockResolvedValue(updatedData);
+    // Update fetch mocks to return new ground truth *after* the operation is applied
+    fetchCountMock.mockResolvedValue(newDb.count());
+    fetchSumMock.mockResolvedValue(newDb.sum('salary'));
+    // Mock the main ground truth fetch as well
+    queryState.fetchGroundTruth = vi.fn().mockResolvedValue(updatedData);
 
+    // Sync QueryState - this triggers Metric.sync internally via subscription
+    await queryState.sync();
 
-       // Sync QueryState - this triggers Metric.sync internally via subscription
-       await queryState.sync();
-
-       // Check if mocks were called
-       expect(queryState.fetchGroundTruth).toHaveBeenCalled();
-       // Metric sync happens async via subscription, check mocks were eventually called
-       await vi.waitFor(() => {
-           expect(fetchCountMock).toHaveBeenCalled();
-           expect(fetchSumMock).toHaveBeenCalled(); // Ensure sum mock was called
-       });
-
-       // Check that Metric instances have updated base values
-       expect(countMetric.getValue()).toBe(4);
-       expect(sumMetric.getValue()).toBe(330000);
-
-       // After sync, the operation is usually confirmed and ground truth updated.
-       // Render should now calculate diff based on the *new* ground truth.
-       // Since the optimistic op matches the new ground truth, the diff should be 0.
-       // Result = new_ground_truth_metric + 0
-       expect(countMetricRender.render()).toBe(4); // 4 + (4-4) = 4
-       expect(sumMetricRender.render('salary')).toBe(330000); // 330000 + (330k-330k) = 330000
-
-       countMetricRender.destroy();
-       sumMetricRender.destroy();
+    // Check if mocks were called
+    expect(queryState.fetchGroundTruth).toHaveBeenCalled();
+    // Metric sync happens async via subscription, check mocks were eventually called
+    await vi.waitFor(() => {
+      expect(fetchCountMock).toHaveBeenCalled();
+      expect(fetchSumMock).toHaveBeenCalled();
     });
 
-    test('should handle all metrics in complex operation sequence', async () => {
-       // Create render engines using outer scope metrics
-       const countMetricRender = new MetricRenderEngine(queryState, countMetric, new CountStrategy(), renderEngine);
-       const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, new SumStrategy(), renderEngine);
-       const minMetricRender = new MetricRenderEngine(queryState, minMetric, new MinStrategy(), renderEngine);
-       const maxMetricRender = new MetricRenderEngine(queryState, maxMetric, new MaxStrategy(), renderEngine);
+    // Check that Metric instances have updated base values
+    expect(countMetric.getValue()).toBe(newDb.count());
+    expect(sumMetric.getValue()).toBe(newDb.sum('salary'));
 
-       // Initial ground truth values
-       const initialCountGT = countMetric.getValue(); // 3
-       const initialSumGT = sumMetric.getValue();     // 260000
-       const initialMinGT = minMetric.getValue();     // 75000
-       const initialMaxGT = maxMetric.getValue();     // 100000
+    // After sync, the operation is usually confirmed and ground truth updated.
+    // Render should now calculate diff based on the *new* ground truth.
+    expect(countMetricRender.render()).toBe(newDb.count());
+    expect(sumMetricRender.render('salary')).toBe(newDb.sum('salary'));
 
-       // Series of operations
-       // 1. Create low salary
-       queryState.add({ type: 'create', instances: [{ id: 4, name: 'Dave', salary: 50000 }]});
-       directDB.create({ id: 4, name: 'Dave', salary: 50000 });
-       // Opt: C=4, Sum=310k, Min=50k, Max=100k
-
-       // 2. Create high salary
-       queryState.add({ type: 'create', instances: [{ id: 5, name: 'Eve', salary: 120000 }]});
-       directDB.create({ id: 5, name: 'Eve', salary: 120000 });
-       // Opt: C=5, Sum=430k, Min=50k, Max=120k
-
-       // 3. Update item
-       const aliceOriginalSalary = 100000;
-       const aliceNewSalary = 105000;
-       queryState.add({ type: 'update', instances: [{ id: 1, salary: aliceNewSalary }]});
-       directDB.update({ id: 1, salary: aliceNewSalary });
-        // Opt: C=5, Sum=435k, Min=50k, Max=120k
-
-       // 4. Delete item (Charlie, id 3, salary 85000)
-       const charlieSalary = 85000;
-       queryState.add({ type: 'delete', instances: [3] });
-       directDB.delete(3);
-       // Opt: C=4, Sum=350k, Min=50k, Max=120k
-
-       // Check all metric calculations against directDB
-       expect(countMetricRender.render()).toBe(directDB.count());           // Expect 4
-       expect(sumMetricRender.render('salary')).toBe(directDB.sum('salary')); // Expect 350000
-       // Min/Max were added/updated within slice, so optimistic should match DB
-       expect(minMetricRender.render('salary')).toBe(directDB.min('salary')); // Expect 50000
-       expect(maxMetricRender.render('salary')).toBe(directDB.max('salary')); // Expect 120000
-
-        countMetricRender.destroy();
-        sumMetricRender.destroy();
-        minMetricRender.destroy();
-        maxMetricRender.destroy();
-    });
-
-    test('should handle rejected operations in all metrics', () => {
-       const countMetricRender = new MetricRenderEngine(queryState, countMetric, new CountStrategy(), renderEngine);
-       const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, new SumStrategy(), renderEngine);
-       const minMetricRender = new MetricRenderEngine(queryState, minMetric, new MinStrategy(), renderEngine);
-       const maxMetricRender = new MetricRenderEngine(queryState, maxMetric, new MaxStrategy(), renderEngine);
-
-       const initialCount = countMetric.getValue(); // 3
-       const initialSum = sumMetric.getValue();     // 260000
-       const initialMin = minMetric.getValue();     // 75000
-       const initialMax = maxMetric.getValue();     // 100000
-
-       // Create operations
-       const opId1 = queryState.add({ type: 'create', instances: [{ id: 4, name: 'Dave', salary: 50000 }]}); // New min
-       const opId2 = queryState.add({ type: 'create', instances: [{ id: 5, name: 'Eve', salary: 120000 }]}); // New max
-
-       // Check optimistic values reflect both creates
-       expect(countMetricRender.render()).toBe(initialCount + 2);           // 5
-       expect(sumMetricRender.render('salary')).toBe(initialSum + 50000 + 120000); // 430000
-       expect(minMetricRender.render('salary')).toBe(50000);                 // New lowest found
-       expect(maxMetricRender.render('salary')).toBe(120000);                // New highest found
-
-       // Reject both operations
-       queryState.reject(opId1);
-       queryState.reject(opId2);
-
-       // Values should revert to initial ground truth metrics
-       expect(countMetricRender.render()).toBe(initialCount); // 3
-       expect(sumMetricRender.render('salary')).toBe(initialSum); // 260000
-       expect(minMetricRender.render('salary')).toBe(initialMin); // 75000
-       expect(maxMetricRender.render('salary')).toBe(initialMax); // 100000
-
-       // Check against DB (which never had the rejected ops)
-       expect(countMetricRender.render()).toBe(directDB.count());
-       expect(sumMetricRender.render('salary')).toBe(directDB.sum('salary'));
-       expect(minMetricRender.render('salary')).toBe(directDB.min('salary'));
-       expect(maxMetricRender.render('salary')).toBe(directDB.max('salary'));
-
-        countMetricRender.destroy();
-        sumMetricRender.destroy();
-        minMetricRender.destroy();
-        maxMetricRender.destroy();
-    });
-
-    test('should incorporate ground truth changes from sync', async () => {
-      // Create a simple sum metric renderer
-      const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, new SumStrategy(), renderEngine);
-      
-      // Start with clean state 
-      queryState.operations.clear();
-      sumMetric.value = 260000; // Reset to original value
-      
-      // Get a reference to initial ground truth data
-      const initialData = queryState.getGroundTruth();
-      let testDB = new SimpleDB(initialData);
-      
-      // Check initial sum
-      expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
-      
-      // Add optimistic update
-      queryState.add({
-        type: 'update',
-        instances: [{ id: 1, salary: 65000 }]
-      });
-      
-      // Apply same update to our test DB
-      testDB.update({ id: 1, salary: 65000 });
-      
-      // Check sum after update - should match our test DB
-      expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
-      
-      // Create server data
-      const serverData = [
-        { id: 1, name: 'Alice', salary: 100000 },
-        { id: 2, name: 'Bob', salary: 80000 },
-        { id: 3, name: 'Charlie', salary: 90000 }
-      ];
-      const serverDB = new SimpleDB(serverData);
-      
-      // Mock server responses
-      queryState.fetchGroundTruth = vi.fn().mockResolvedValue(serverData);
-      fetchSumMock.mockResolvedValue(serverDB.sum('salary'));
-      
-      // Sync queryState with server
-      await queryState.sync();
-      
-      // Verify metric ground truth updated
-      await vi.waitFor(() => {
-        expect(fetchSumMock).toHaveBeenCalled();
-      });
-      expect(sumMetric.getValue()).toBe(serverDB.sum('salary'));
-      
-      // Update our test DB to match the server state + optimistic updates
-      testDB = new SimpleDB(serverData);
-      testDB.update({ id: 1, salary: 65000 });
-      
-      // Check sum after sync - should match updated test DB
-      expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
-      
-      sumMetricRender.destroy();
-    });
+    countMetricRender.destroy();
+    sumMetricRender.destroy();
   });
+
+  test('should handle all metrics in complex operation sequence', async () => {
+    // Create render engines using outer scope metrics
+    const countMetricRender = new MetricRenderEngine(queryState, countMetric, new CountStrategy(), renderEngine);
+    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, new SumStrategy(), renderEngine);
+    const minMetricRender = new MetricRenderEngine(queryState, minMetric, new MinStrategy(), renderEngine);
+    const maxMetricRender = new MetricRenderEngine(queryState, maxMetric, new MaxStrategy(), renderEngine);
+
+    // Initial ground truth values from directDB
+    const initialCountGT = directDB.count();
+    const initialSumGT = directDB.sum('salary');
+    const initialMinGT = directDB.min('salary');
+    const initialMaxGT = directDB.max('salary');
+
+    // Keep a test DB in sync with operations
+    const testDB = new SimpleDB(initialData);
+
+    // Series of operations
+    // 1. Create low salary
+    const lowSalaryItem = { id: 4, name: 'Dave', salary: 50000 };
+    queryState.add({ type: 'create', instances: [lowSalaryItem] });
+    testDB.create(lowSalaryItem);
+    directDB.create(lowSalaryItem);
+
+    // Verify metrics match test DB after first operation
+    expect(countMetricRender.render()).toBe(testDB.count());
+    expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
+    expect(minMetricRender.render('salary')).toBe(testDB.min('salary'));
+    expect(maxMetricRender.render('salary')).toBe(testDB.max('salary'));
+
+    // 2. Create high salary
+    const highSalaryItem = { id: 5, name: 'Eve', salary: 120000 };
+    queryState.add({ type: 'create', instances: [highSalaryItem] });
+    testDB.create(highSalaryItem);
+    directDB.create(highSalaryItem);
+
+    // Verify metrics match test DB after second operation
+    expect(countMetricRender.render()).toBe(testDB.count());
+    expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
+    expect(minMetricRender.render('salary')).toBe(testDB.min('salary'));
+    expect(maxMetricRender.render('salary')).toBe(testDB.max('salary'));
+
+    // 3. Update item
+    const aliceUpdate = { id: 1, salary: 105000 };
+    queryState.add({ type: 'update', instances: [aliceUpdate] });
+    testDB.update(aliceUpdate);
+    directDB.update(aliceUpdate);
+
+    // Verify metrics match test DB after update operation
+    expect(countMetricRender.render()).toBe(testDB.count());
+    expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
+    expect(minMetricRender.render('salary')).toBe(testDB.min('salary'));
+    expect(maxMetricRender.render('salary')).toBe(testDB.max('salary'));
+
+    // 4. Delete item (Charlie, id 3)
+    queryState.add({ type: 'delete', instances: [3] });
+    testDB.delete(3);
+    directDB.delete(3);
+
+    // Check all metric calculations against testDB and directDB
+    expect(countMetricRender.render()).toBe(testDB.count());
+    expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
+    expect(minMetricRender.render('salary')).toBe(testDB.min('salary'));
+    expect(maxMetricRender.render('salary')).toBe(testDB.max('salary'));
+
+    // Double-check against directDB
+    expect(countMetricRender.render()).toBe(directDB.count());
+    expect(sumMetricRender.render('salary')).toBe(directDB.sum('salary'));
+    expect(minMetricRender.render('salary')).toBe(directDB.min('salary'));
+    expect(maxMetricRender.render('salary')).toBe(directDB.max('salary'));
+
+    countMetricRender.destroy();
+    sumMetricRender.destroy();
+    minMetricRender.destroy();
+    maxMetricRender.destroy();
+  });
+
+  test('should handle rejected operations in all metrics', () => {
+    const countMetricRender = new MetricRenderEngine(queryState, countMetric, new CountStrategy(), renderEngine);
+    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, new SumStrategy(), renderEngine);
+    const minMetricRender = new MetricRenderEngine(queryState, minMetric, new MinStrategy(), renderEngine);
+    const maxMetricRender = new MetricRenderEngine(queryState, maxMetric, new MaxStrategy(), renderEngine);
+
+    // Set up test DB to track operations
+    const testDB = new SimpleDB(initialData);
+
+    // Store initial metric values from the test DB
+    const initialCount = testDB.count();
+    const initialSum = testDB.sum('salary');
+    const initialMin = testDB.min('salary');
+    const initialMax = testDB.max('salary');
+
+    // Create operations
+    const newMinItem = { id: 4, name: 'Dave', salary: 50000 };
+    const newMaxItem = { id: 5, name: 'Eve', salary: 120000 };
+    
+    const opId1 = queryState.add({ type: 'create', instances: [newMinItem] });
+    const opId2 = queryState.add({ type: 'create', instances: [newMaxItem] });
+    
+    // Update test DB (temporarily)
+    testDB.create(newMinItem);
+    testDB.create(newMaxItem);
+
+    // Check optimistic values reflect both creates
+    expect(countMetricRender.render()).toBe(testDB.count());
+    expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
+    expect(minMetricRender.render('salary')).toBe(testDB.min('salary'));
+    expect(maxMetricRender.render('salary')).toBe(testDB.max('salary'));
+
+    // Reject both operations and revert test DB
+    queryState.reject(opId1);
+    queryState.reject(opId2);
+    testDB.delete(newMinItem.id);
+    testDB.delete(newMaxItem.id);
+
+    // Values should revert to initial state
+    expect(countMetricRender.render()).toBe(initialCount);
+    expect(sumMetricRender.render('salary')).toBe(initialSum);
+    expect(minMetricRender.render('salary')).toBe(initialMin);
+    expect(maxMetricRender.render('salary')).toBe(initialMax);
+
+    // Check against DB (which never had the rejected ops)
+    expect(countMetricRender.render()).toBe(directDB.count());
+    expect(sumMetricRender.render('salary')).toBe(directDB.sum('salary'));
+    expect(minMetricRender.render('salary')).toBe(directDB.min('salary'));
+    expect(maxMetricRender.render('salary')).toBe(directDB.max('salary'));
+
+    countMetricRender.destroy();
+    sumMetricRender.destroy();
+    minMetricRender.destroy();
+    maxMetricRender.destroy();
+  });
+
+  test('should incorporate ground truth changes from sync', async () => {
+    // Create a simple sum metric renderer
+    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, new SumStrategy(), renderEngine);
+    
+    // Start with clean state 
+    queryState.operations.clear();
+    
+    // Get a reference to initial ground truth data
+    const initialData = queryState.getGroundTruth();
+    let testDB = new SimpleDB(initialData);
+    
+    // Reset metric value to match test DB
+    sumMetric.value = testDB.sum('salary');
+    
+    // Check initial sum
+    expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
+    
+    // Add optimistic update
+    const salaryUpdate = { id: 1, salary: 65000 };
+    queryState.add({
+      type: 'update',
+      instances: [salaryUpdate]
+    });
+    
+    // Apply same update to our test DB
+    testDB.update(salaryUpdate);
+    
+    // Check sum after update - should match our test DB
+    expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
+    
+    // Create server data
+    const serverData = [
+      { id: 1, name: 'Alice', salary: 100000 },
+      { id: 2, name: 'Bob', salary: 80000 },
+      { id: 3, name: 'Charlie', salary: 90000 }
+    ];
+    const serverDB = new SimpleDB(serverData);
+    
+    // Mock server responses
+    queryState.fetchGroundTruth = vi.fn().mockResolvedValue(serverData);
+    fetchSumMock.mockResolvedValue(serverDB.sum('salary'));
+    
+    // Sync queryState with server
+    await queryState.sync();
+    
+    // Verify metric ground truth updated
+    await vi.waitFor(() => {
+      expect(fetchSumMock).toHaveBeenCalled();
+    });
+    expect(sumMetric.getValue()).toBe(serverDB.sum('salary'));
+    
+    // Update our test DB to match the server state + optimistic updates
+    testDB = new SimpleDB(serverData);
+    testDB.update(salaryUpdate);
+    
+    // Check sum after sync - should match updated test DB
+    expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
+    
+    sumMetricRender.destroy();
+  });
+});
 });
