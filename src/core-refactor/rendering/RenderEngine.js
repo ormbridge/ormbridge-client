@@ -48,12 +48,16 @@ export class RenderEngine {
       // Sort the data obtained from cache or recalculation
       const sortedData = this._applySorting(processedData, sortFn);
 
-      // Calculate the end index for slicing
-      const end = limit !== undefined ? offset + limit : sortedData.length;
-      // Slice the *sorted* data
-      const paginatedData = sortedData.slice(offset, end);
+      let paginatedData;
 
-      return paginatedData;
+      // If limit is null or undefined, return data from offset to the end
+      if (limit === null || limit === undefined) {
+        return sortedData.slice(offset);
+      }
+
+      // Otherwise apply both offset and limit
+      const end = offset + limit;
+      return sortedData.slice(offset, end);
     }
   
     /**
