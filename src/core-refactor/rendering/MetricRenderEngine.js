@@ -20,10 +20,8 @@ export class MetricRenderEngine {
     // Inside MetricRenderEngine.render method:
     render(field = null) {
       const cacheKey = field === null ? 'no_field' : field;
-      console.log(`[MetricRender] Render called. Field: ${field}, CacheKey: ${cacheKey}`); // Debug log
   
       if (this._canUseCache(cacheKey)) {
-        console.log(`[MetricRender] Using cache for key: ${cacheKey}`); // Debug log
         return this._cache.get(cacheKey).metricValue;
       }
   
@@ -33,22 +31,16 @@ export class MetricRenderEngine {
         offset: 0,
         limit: null
       }) || [];
-  
-      console.log(`[MetricRender] groundTruthMetricValue: ${groundTruthMetricValue}`); // <<< ADD THIS LOG
-      console.log(`[MetricRender] groundTruthDataSlice size: ${groundTruthDataSlice.length}`); // Debug log
-      console.log(`[MetricRender] optimisticDataSlice size: ${optimisticDataSlice.length}`); // Debug log
-  
+
       const filteredGroundTruthSlice = groundTruthDataSlice;
       const filteredOptimisticSlice = optimisticDataSlice;
   
-      console.log(`[MetricRender] Calculating with strategy...`); // Debug log
       const calculatedValue = this.strategy.calculate(
         groundTruthMetricValue,
         filteredGroundTruthSlice,
         filteredOptimisticSlice,
         field
       );
-      console.log(`[MetricRender] Calculated value: ${calculatedValue}`); // <<< ADD THIS LOG
   
       this._updateCache(cacheKey, calculatedValue);
       return calculatedValue;

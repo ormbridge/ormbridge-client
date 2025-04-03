@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeEach, vi, afterEach } from 'vitest';
-import { QueryState } from '../src/core-refactor/state/QueryState.js';
-import { RenderEngine } from '../src/core-refactor/rendering/RenderEngine.js';
+import { QueryState } from '../../src/core-refactor/state/QueryState.js';
+import { RenderEngine } from '../../src/core-refactor/rendering/RenderEngine.js';
 import {
     Metric
-} from '../src/core-refactor/state/MetricState.js'
+} from '../../src/core-refactor/state/MetricState.js'
 import {
   MetricRenderEngine,
   CountStrategy,
@@ -11,7 +11,7 @@ import {
   MinStrategy,
   MaxStrategy,
   MetricStrategyFactory
-} from '../src/core-refactor/rendering/MetricRenderEngine.js';
+} from '../../src/core-refactor/rendering/MetricRenderEngine.js';
 
 // Simple in-memory database for comparison that includes metric calculation methods
 class SimpleDB {

@@ -67,7 +67,6 @@ export class Metric {
             // Update internal value if it changed. No notification needed from here.
             if (this.value !== freshValue) {
                 this.value = freshValue;
-                 // console.log(`Metric [${this.metricName}] value updated to: ${this.value}`);
             }
         } catch (error) {
             console.error(`Metric [${this.metricName}] sync failed:`, error);

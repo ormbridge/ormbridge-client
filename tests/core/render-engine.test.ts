@@ -2,8 +2,8 @@
  * RenderEngine and QueryState tests using Vitest
  */
 import { describe, test, expect, beforeEach, vi, afterEach } from 'vitest';
-import { QueryState } from '../src/core-refactor/state/QueryState.js';
-import { RenderEngine } from '../src/core-refactor/rendering/RenderEngine.js';
+import { QueryState } from '../../src/core-refactor/state/QueryState.js';
+import { RenderEngine } from '../../src/core-refactor/rendering/RenderEngine.js';
 
 // Simple in-memory database for comparison
 class SimpleDB {
