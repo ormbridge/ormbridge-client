@@ -31,6 +31,13 @@ import { loadConfigFromFile } from '../configFileLoader.js';
  */
 
 /**
+ * @typedef {Object} RelationshipField
+ * @property {string} field - Name of the relationship field
+ * @property {string} ModelClass - The class name of the related model
+ * @property {string} relationshipType - Type of relationship (e.g., "many-to-many", "foreign-key")
+ */
+
+/**
  * @typedef {Object} RelationshipData
  * @property {string} type
  * @property {string} model - e.g. "django_app.deepmodellevel1"
@@ -73,14 +80,13 @@ import { loadConfigFromFile } from '../configFileLoader.js';
  * @property {string} modulePath           - Dynamic module path for imports.
  * @property {string} className            - Exported full model class name (from schema.class_name).
  * @property {string} interfaceName        - Full model fields interface name (e.g. DeepModelLevel1Fields).
- * @property {string} summaryClassName     - Generated summary class name (e.g. DeepModelLevel1Summary).
- * @property {string} summaryInterfaceName - Generated summary interface name (e.g. DeepModelLevel1SummaryFields).
  * @property {string} modelName            - Raw schema.model_name (including app label path).
  * @property {PropertyDefinition[]} properties
+ * @property {RelationshipField[]} relationshipFields - List of relationship fields for the model
  * @property {string} [description]
  * @property {string[]} [definitions]
  * @property {string[]} [jsImports]        - For JS generation: full class imports.
- * @property {string[]} [tsImports]        - For TS generation: type imports (Fields and SummaryFields).
+ * @property {string[]} [tsImports]        - For TS generation: type imports (Fields).
  * @property {string} configKey            - The backend config key.
  * @property {string} primaryKeyField      - Primary key field from schema.
  */
@@ -151,6 +157,11 @@ export class {{className}} extends Model {
   static objects = new {{className}}Manager({{className}});
   static fields = [{{#each properties}}'{{name}}'{{#unless @last}}, {{/unless}}{{/each}}];
   static schema = schemaData;
+  static relationship_fields = [
+    {{#each relationshipFields}}
+    { field: '{{field}}', ModelClass: {{ModelClass}}, relationshipType: '{{relationshipType}}' }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ];
 
   constructor(data) {
     {{className}}.validateFields(data);
@@ -159,11 +170,11 @@ export class {{className}} extends Model {
   {{#if isRelationship}}
     {{#if isArrayRelationship}}
     this.{{name}} = data.{{name}} 
-      ? data.{{name}}.map(item => createModelInstance({{relationshipClassName}}, {{relationshipClassName}}Summary, item))
+      ? data.{{name}}.map(item => createModelInstance({{relationshipClassName}}, item))
       : data.{{name}};
     {{else}}
     this.{{name}} = data.{{name}} 
-      ? createModelInstance({{relationshipClassName}}, {{relationshipClassName}}Summary, data.{{name}})
+      ? createModelInstance({{relationshipClassName}}, data.{{name}})
       : data.{{name}};
     {{/if}}
   {{else}}
@@ -193,22 +204,6 @@ export class {{className}} extends Model {
     return data;
   }
 }
-
-// --------------------
-// Summary Model
-// --------------------
-import { ModelSummary } from '{{modulePath}}';
-
-export class {{summaryClassName}} extends ModelSummary {
-  static configKey = '{{configKey}}';
-  static modelName = '{{modelName}}';
-  static primaryKeyField = '{{primaryKeyField}}';
-  static fullModelConstructor = {{className}};
-
-  constructor(data) {
-    super(data);
-  }
-}
 `;
 
 // Updated TS_DECLARATION_TEMPLATE with improved relationship handling
@@ -219,7 +214,7 @@ const TS_DECLARATION_TEMPLATE = `/**
 {{/if}}
  */
 
-import { Model, Manager, ModelSummary, ModelSummaryFields } from '{{modulePath}}';
+import { Model, Manager } from '{{modulePath}}';
 import { StringOperators, NumberOperators, BooleanOperators, DateOperators } from '{{modulePath}}';
 import { QuerySet, LiveQuerySet, LiveQuerySetOptions, MetricResult, ResultTuple, SerializerOptions, NestedPaths } from '{{modulePath}}';
 
@@ -239,6 +234,20 @@ export interface {{interfaceName}} {
 {{#each properties}}
   {{name}}{{#unless required}}?{{/unless}}: {{{type}}};
 {{/each}}
+  // Read-only representation field
+  readonly repr: { 
+    str: string; 
+    img: string | null;
+  };
+}
+
+/**
+ * Relationship field structure
+ */
+export interface RelationshipField {
+  field: string;
+  ModelClass: any;
+  relationshipType: string;
 }
 
 /**
@@ -408,44 +417,26 @@ export class {{className}}Manager extends RuntimeManager {
   }
 }
 
-export interface {{summaryInterfaceName}} extends ModelSummaryFields {
-  {{primaryKeyField}}: number;
-  repr: {
-    str: string;
-    img?: string;
-  };
-}
-
 // Class declarations
 export declare class {{className}} extends Model implements {{interfaceName}} {
 {{#each properties}}
   {{name}}{{#unless required}}?:{{else}}:{{/unless}} {{{type}}};
 {{/each}}
+  readonly repr: { 
+    str: string; 
+    img: string | null;
+  };
 
   static configKey: string;
   static modelName: string;
   static primaryKeyField: string;
+  static relationship_fields: RelationshipField[];
   
   // Use model-specific manager class instead of generic manager
   static objects: {{className}}Manager;
 
   constructor(data: Partial<{{interfaceName}}>);
   serialize(): Partial<{{interfaceName}}>;
-}
-
-export declare class {{summaryClassName}} extends ModelSummary implements {{summaryInterfaceName}} {
-  static configKey: string;
-  static modelName: string;
-  static primaryKeyField: string;
-  static fullModelConstructor: typeof {{className}};
-
-  {{primaryKeyField}}: number;
-  repr: {
-    str: string;
-    img?: string;
-  };
-
-  constructor(data: Partial<{{summaryInterfaceName}}>);
 }
 
 /**
@@ -504,8 +495,6 @@ async function generateSchemaForModel(backend, model) {
   const rawModelName = schema.model_name;
   const className = schema.class_name;
   const interfaceName = `${className}Fields`;
-  const summaryClassName = `${className}Summary`;
-  const summaryInterfaceName = `${className}SummaryFields`;
 
   const parts = model.split('.');
   const currentApp = parts.length > 1 ? parts[0] : '';
@@ -518,8 +507,6 @@ async function generateSchemaForModel(backend, model) {
     modulePath,
     className,
     interfaceName,
-    summaryClassName,
-    summaryInterfaceName,
     rawModelName,
     schema,
     currentApp,
@@ -569,21 +556,6 @@ function getImportPath(currentApp, relModel) {
  * @param {string} modulePath
  * @param {string} className
  * @param {string} interfaceName
- * @param {string} summaryClassName
- * @param {string} summaryInterfaceName
- * @param {string} rawModelName
- * @param {SchemaDefinition} schema
- * @param {string} currentApp
- * @param {string} configKey
- * @returns {TemplateData}
- */
-/**
- * Prepares template data for Handlebars.
- * @param {string} modulePath
- * @param {string} className
- * @param {string} interfaceName
- * @param {string} summaryClassName
- * @param {string} summaryInterfaceName
  * @param {string} rawModelName
  * @param {SchemaDefinition} schema
  * @param {string} currentApp
@@ -594,8 +566,6 @@ function prepareTemplateData(
   modulePath,
   className,
   interfaceName,
-  summaryClassName,
-  summaryInterfaceName,
   rawModelName,
   schema,
   currentApp,
@@ -603,6 +573,8 @@ function prepareTemplateData(
 ) {
   /** @type {PropertyDefinition[]} */
   const properties = [];
+  /** @type {RelationshipField[]} */
+  const relationshipFields = [];
   const usedDefs = new Set();
 
   for (const [propName, prop] of Object.entries(schema.properties)) {
@@ -632,6 +604,13 @@ function prepareTemplateData(
       const relData = schema.relationships[propName];
       propDef.relationshipClassName = relData.class_name;
       propDef.relationshipPrimaryKeyField = relData.primary_key_field;
+      
+      // Add to relationshipFields array
+      relationshipFields.push({
+        field: propName,
+        ModelClass: relData.class_name,
+        relationshipType: prop.format // Use the format value directly
+      });
     }
     
     properties.push(propDef);
@@ -667,8 +646,8 @@ function prepareTemplateData(
   if (schema.relationships) {
     for (const [propName, rel] of Object.entries(schema.relationships)) {
       const importPath = getImportPath(currentApp, rel.model);
-      jsImportSet.add(`import { ${rel.class_name}, ${rel.class_name}Summary } from '${importPath}';`);
-      tsImportSet.add(`import { ${rel.class_name}Fields, ${rel.class_name}SummaryFields, ${rel.class_name}QuerySet, ${rel.class_name}LiveQuerySet } from '${importPath}';`);
+      jsImportSet.add(`import { ${rel.class_name} } from '${importPath}';`);
+      tsImportSet.add(`import { ${rel.class_name}Fields, ${rel.class_name}QuerySet, ${rel.class_name}LiveQuerySet } from '${importPath}';`);
     }
   }
 
@@ -685,10 +664,9 @@ function prepareTemplateData(
     modulePath,
     className,
     interfaceName,
-    summaryClassName,
-    summaryInterfaceName,
     modelName: rawModelName,
     properties,
+    relationshipFields,
     description: schema.description,
     definitions: definitionsTs.length > 0 ? definitionsTs : undefined,
     jsImports,
@@ -718,8 +696,8 @@ function generateTypeForProperty(
       ? 'number'
       : (prop.type === 'string' ? 'string' : 'any');
     return prop.format === 'many-to-many'
-      ? `Array<${relData.class_name}Fields | ${relData.class_name}SummaryFields | ${idType}>`
-      : `${relData.class_name}Fields | ${relData.class_name}SummaryFields | ${idType}`;
+      ? `Array<${relData.class_name}Fields | ${idType}>`
+      : `${relData.class_name}Fields | ${idType}`;
   }
 
   if (prop.ref && prop.ref.startsWith("#/components/schemas/")) {

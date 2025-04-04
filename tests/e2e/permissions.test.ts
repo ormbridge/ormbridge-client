@@ -388,18 +388,26 @@ describe('Permission and Custom PK Tests (non-admin user)', () => {
     
     it('should not allow non-admin user to update restricted fields on the related model', async () => {
       const instance = await ModelWithCustomPKRelation.objects.get({ pk: relationInstance.pk });
+      
       // Attempt a nested update: change the related model's name.
-      // This update should be ignored by field-level permissions.
       if (typeof instance.custom_pk_related === 'object') {
         instance.custom_pk_related.name = 'Hacked Name';
+        
+        // Optional: Log what we're trying to update
+        console.log('Attempting to update with:', JSON.stringify(instance.custom_pk_related));
       }
+      
       // Save the parent instance.
       const updated = await instance.save();
-      // Verify that the related model's summary still shows the original representation.
-      // For example, its repr field remains unchanged.
+      console.log('After update, custom_pk_related:', JSON.stringify(updated.custom_pk_related));
+      
+      // Check what we can - the custom_pk is still there
       if (typeof updated.custom_pk_related === 'object') {
-        console.log(JSON.stringify(updated.custom_pk_related))
-        expect(updated.custom_pk_related.repr.str).toBe('CustomPK: Test Custom PK');
+        expect(updated.custom_pk_related.custom_pk).toBe(1);
+        
+        // Fetch the related model directly to verify its name wasn't changed
+        const relatedModel = await CustomPKModel.objects.get({ pk: updated.custom_pk_related.custom_pk });
+        expect(relatedModel.name).toBe('Test Custom PK'); // Original name, not "Hacked Name"
       }
     });
   });

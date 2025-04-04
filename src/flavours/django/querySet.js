@@ -82,6 +82,7 @@ import { MultipleObjectsReturned, DoesNotExist, parseORMBridgeError } from './er
 import { Model } from './model.js';
 import axios from 'axios';
 import { getConfig } from '../../config.js';
+import { denormalizeResponse } from './denormalizeResponse.js';
 
 /**
  * A QuerySet provides a fluent API for constructing and executing queries.
@@ -682,7 +683,7 @@ export class QuerySet {
     const filterNode = nonSearchNodes.length === 0 ? null :
       nonSearchNodes.length === 1 ? nonSearchNodes[0] : {
         type: 'and',
-        children: nonSearchNodes
+        children: nonSearchNodes  
       };
   
     return {
@@ -725,7 +726,7 @@ export class QuerySet {
     
     try {
       const response = await axios.post(finalUrl, payload, { headers });
-      return response.data;
+      return denormalizeResponse(response.data);
     } catch (error) {
       if (error.response && error.response.data) {
         const parsedError = parseORMBridgeError(error.response.data);
