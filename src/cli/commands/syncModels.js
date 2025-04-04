@@ -73,12 +73,14 @@ import { loadConfigFromFile } from '../configFileLoader.js';
  * @property {string} modulePath           - Dynamic module path for imports.
  * @property {string} className            - Exported full model class name (from schema.class_name).
  * @property {string} interfaceName        - Full model fields interface name (e.g. DeepModelLevel1Fields).
+ * @property {string} summaryClassName     - Generated summary class name (e.g. DeepModelLevel1Summary).
+ * @property {string} summaryInterfaceName - Generated summary interface name (e.g. DeepModelLevel1SummaryFields).
  * @property {string} modelName            - Raw schema.model_name (including app label path).
  * @property {PropertyDefinition[]} properties
  * @property {string} [description]
  * @property {string[]} [definitions]
  * @property {string[]} [jsImports]        - For JS generation: full class imports.
- * @property {string[]} [tsImports]        - For TS generation: type imports (Fields).
+ * @property {string[]} [tsImports]        - For TS generation: type imports (Fields and SummaryFields).
  * @property {string} configKey            - The backend config key.
  * @property {string} primaryKeyField      - Primary key field from schema.
  */
@@ -110,12 +112,12 @@ const JS_MODEL_TEMPLATE = `/**
 
 import _ from 'lodash-es';
 import { Model, Manager, QuerySet } from '{{modulePath}}';
-import schemaData from './{{className}}.schema.json';
 {{#if jsImports}}
 {{#each jsImports}}
 {{{this}}}
 {{/each}}
 {{/if}}
+import schemaData from './{{className}}.schema.json';
 
 /**
  * Model-specific QuerySet implementation
@@ -149,14 +151,6 @@ export class {{className}} extends Model {
   static fields = [{{#each properties}}'{{name}}'{{#unless @last}}, {{/unless}}{{/each}}];
   static schema = schemaData;
 
-  static relationship_fields = [
-    {{#each properties}}
-      {{#if isRelationship}}
-    { field: '{{name}}', modelClass: {{relationshipClassName}}, fieldType: '{{#if isArrayRelationship}}many-to-many{{else}}foreign-key{{/if}}' }{{#unless @last}},{{/unless}}
-      {{/if}}
-    {{/each}}
-  ];
-
   constructor(data) {
     {{className}}.validateFields(data);
     super(data);
@@ -168,27 +162,55 @@ export class {{className}} extends Model {
   // Serialize only the allowed fields
   serialize() {
     const data = {};
-    {{#each properties}}
-      {{#if isRelationship}}
-        {{#if isArrayRelationship}}
+{{#each properties}}
+  {{#if isRelationship}}
+    {{#if isArrayRelationship}}
     // For array relationships (many-to-many)
     data.{{name}} = this.{{name}} 
-      ? this.{{name}}.map(item => item?.['{{relationshipPrimaryKeyField}}'] || item)
+      ? this.{{name}}.map(item => {
+          // If it's a proxy or model instance, get the ID
+          if (item) {
+            // For proxies with $id property
+            if (item.$id !== undefined) {
+              return { type: item.$type, id: item.$id };
+            }
+            // For model instances or objects with primary key
+            if (item['{{relationshipPrimaryKeyField}}'] !== undefined) {
+              return { type: "{{relationshipClassName}}", id: item['{{relationshipPrimaryKeyField}}'] };
+            }
+          }
+          // Fallback to the item itself if it's already an ID or reference object
+          return item;
+        })
       : this.{{name}};
-        {{else}}
-    // For single relationships
-    data.{{name}} = this.{{name}}?.['{{relationshipPrimaryKeyField}}'] || this.{{name}};
-        {{/if}}
-      {{else}}
+    {{else}}
+    // For single relationships (ForeignKey)
+    if (this.{{name}}) {
+      // For proxies with $id property
+      if (this.{{name}}.$id !== undefined) {
+        data.{{name}} = { type: this.{{name}}.$type, id: this.{{name}}.$id };
+      }
+      // For model instances or objects with primary key
+      else if (this.{{name}}['{{relationshipPrimaryKeyField}}'] !== undefined) {
+        data.{{name}} = { type: "{{relationshipClassName}}", id: this.{{name}}['{{relationshipPrimaryKeyField}}'] };
+      }
+      // Fallback to the value itself if it's already an ID or reference object
+      else {
+        data.{{name}} = this.{{name}};
+      }
+    } else {
+      data.{{name}} = this.{{name}};
+    }
+    {{/if}}
+  {{else}}
     data.{{name}} = this.{{name}};
-      {{/if}}
-    {{/each}}
+  {{/if}}
+{{/each}}
     return data;
   }
 }
 `;
 
-// Updated TS_DECLARATION_TEMPLATE with improved relationship handling
 const TS_DECLARATION_TEMPLATE = `/**
  * This file was auto-generated. Do not make direct changes to the file.
 {{#if description}}
@@ -394,12 +416,6 @@ export declare class {{className}} extends Model implements {{interfaceName}} {
   static configKey: string;
   static modelName: string;
   static primaryKeyField: string;
-
-  static relationship_fields: Array<{
-    field: string;
-    modelClass: any;
-    fieldType: 'many-to-many' | 'foreign-key' | 'one-to-one';
-  }>;
   
   // Use model-specific manager class instead of generic manager
   static objects: {{className}}Manager;
@@ -464,6 +480,8 @@ async function generateSchemaForModel(backend, model) {
   const rawModelName = schema.model_name;
   const className = schema.class_name;
   const interfaceName = `${className}Fields`;
+  const summaryClassName = `${className}Summary`;
+  const summaryInterfaceName = `${className}SummaryFields`;
 
   const parts = model.split('.');
   const currentApp = parts.length > 1 ? parts[0] : '';
@@ -476,6 +494,8 @@ async function generateSchemaForModel(backend, model) {
     modulePath,
     className,
     interfaceName,
+    summaryClassName,
+    summaryInterfaceName,
     rawModelName,
     schema,
     currentApp,
@@ -525,6 +545,8 @@ function getImportPath(currentApp, relModel) {
  * @param {string} modulePath
  * @param {string} className
  * @param {string} interfaceName
+ * @param {string} summaryClassName
+ * @param {string} summaryInterfaceName
  * @param {string} rawModelName
  * @param {SchemaDefinition} schema
  * @param {string} currentApp
@@ -536,6 +558,8 @@ function getImportPath(currentApp, relModel) {
  * @param {string} modulePath
  * @param {string} className
  * @param {string} interfaceName
+ * @param {string} summaryClassName
+ * @param {string} summaryInterfaceName
  * @param {string} rawModelName
  * @param {SchemaDefinition} schema
  * @param {string} currentApp
@@ -546,6 +570,8 @@ function prepareTemplateData(
   modulePath,
   className,
   interfaceName,
+  summaryClassName,
+  summaryInterfaceName,
   rawModelName,
   schema,
   currentApp,
@@ -635,6 +661,8 @@ function prepareTemplateData(
     modulePath,
     className,
     interfaceName,
+    summaryClassName,
+    summaryInterfaceName,
     modelName: rawModelName,
     properties,
     description: schema.description,
@@ -665,11 +693,14 @@ function generateTypeForProperty(
     const idType = (prop.type === 'integer' || prop.type === 'number')
       ? 'number'
       : (prop.type === 'string' ? 'string' : 'any');
+    
+    // No longer include Summary types in union
     return prop.format === 'many-to-many'
-      ? `Array<${relData.class_name}Fields | ${idType}>`
-      : `${relData.class_name}Fields | ${idType}`;
+      ? `Array<${relData.class_name}Fields | ${idType} | {type: string, id: ${idType}}>`
+      : `${relData.class_name}Fields | ${idType} | {type: string, id: ${idType}}`;
   }
 
+  // Rest of function remains unchanged
   if (prop.ref && prop.ref.startsWith("#/components/schemas/")) {
     const defName = prop.ref.split("/").pop() || prop.ref;
     return `${defName}Fields`;
