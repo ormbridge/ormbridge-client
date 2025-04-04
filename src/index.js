@@ -35,6 +35,7 @@ import {
   import { QuerySet } from './flavours/django/querySet.js';
   import { Manager, ResultTuple } from './flavours/django/manager.js';
   import { Model } from './flavours/django/model.js';
+  import { createModelInstance } from './flavours/django/createModelInstance.js';
   import { ModelSummary } from './flavours/django/modelSummary.js';
   
   // Configuration
@@ -80,6 +81,7 @@ import {
     Manager,
     ResultTuple,
     Model,
+    createModelInstance,
     ModelSummary,
     
     // Configuration

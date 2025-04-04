@@ -112,12 +112,13 @@ const JS_MODEL_TEMPLATE = `/**
 
 import _ from 'lodash-es';
 import { Model, Manager, QuerySet } from '{{modulePath}}';
+import { createModelInstance } from '{{modulePath}}';
+import schemaData from './{{className}}.schema.json';
 {{#if jsImports}}
 {{#each jsImports}}
 {{{this}}}
 {{/each}}
 {{/if}}
-import schemaData from './{{className}}.schema.json';
 
 /**
  * Model-specific QuerySet implementation
@@ -155,62 +156,62 @@ export class {{className}} extends Model {
     {{className}}.validateFields(data);
     super(data);
 {{#each properties}}
+  {{#if isRelationship}}
+    {{#if isArrayRelationship}}
+    this.{{name}} = data.{{name}} 
+      ? data.{{name}}.map(item => createModelInstance({{relationshipClassName}}, {{relationshipClassName}}Summary, item))
+      : data.{{name}};
+    {{else}}
+    this.{{name}} = data.{{name}} 
+      ? createModelInstance({{relationshipClassName}}, {{relationshipClassName}}Summary, data.{{name}})
+      : data.{{name}};
+    {{/if}}
+  {{else}}
     this.{{name}} = data.{{name}};
+  {{/if}}
 {{/each}}
   }
 
   // Serialize only the allowed fields
   serialize() {
     const data = {};
-{{#each properties}}
-  {{#if isRelationship}}
-    {{#if isArrayRelationship}}
+    {{#each properties}}
+      {{#if isRelationship}}
+        {{#if isArrayRelationship}}
     // For array relationships (many-to-many)
     data.{{name}} = this.{{name}} 
-      ? this.{{name}}.map(item => {
-          // If it's a proxy or model instance, get the ID
-          if (item) {
-            // For proxies with $id property
-            if (item.$id !== undefined) {
-              return { type: item.$type, id: item.$id };
-            }
-            // For model instances or objects with primary key
-            if (item['{{relationshipPrimaryKeyField}}'] !== undefined) {
-              return { type: "{{relationshipClassName}}", id: item['{{relationshipPrimaryKeyField}}'] };
-            }
-          }
-          // Fallback to the item itself if it's already an ID or reference object
-          return item;
-        })
+      ? this.{{name}}.map(item => item?.['{{relationshipPrimaryKeyField}}'] || item)
       : this.{{name}};
-    {{else}}
-    // For single relationships (ForeignKey)
-    if (this.{{name}}) {
-      // For proxies with $id property
-      if (this.{{name}}.$id !== undefined) {
-        data.{{name}} = { type: this.{{name}}.$type, id: this.{{name}}.$id };
-      }
-      // For model instances or objects with primary key
-      else if (this.{{name}}['{{relationshipPrimaryKeyField}}'] !== undefined) {
-        data.{{name}} = { type: "{{relationshipClassName}}", id: this.{{name}}['{{relationshipPrimaryKeyField}}'] };
-      }
-      // Fallback to the value itself if it's already an ID or reference object
-      else {
-        data.{{name}} = this.{{name}};
-      }
-    } else {
-      data.{{name}} = this.{{name}};
-    }
-    {{/if}}
-  {{else}}
+        {{else}}
+    // For single relationships
+    data.{{name}} = this.{{name}}?.['{{relationshipPrimaryKeyField}}'] || this.{{name}};
+        {{/if}}
+      {{else}}
     data.{{name}} = this.{{name}};
-  {{/if}}
-{{/each}}
+      {{/if}}
+    {{/each}}
     return data;
+  }
+}
+
+// --------------------
+// Summary Model
+// --------------------
+import { ModelSummary } from '{{modulePath}}';
+
+export class {{summaryClassName}} extends ModelSummary {
+  static configKey = '{{configKey}}';
+  static modelName = '{{modelName}}';
+  static primaryKeyField = '{{primaryKeyField}}';
+  static fullModelConstructor = {{className}};
+
+  constructor(data) {
+    super(data);
   }
 }
 `;
 
+// Updated TS_DECLARATION_TEMPLATE with improved relationship handling
 const TS_DECLARATION_TEMPLATE = `/**
  * This file was auto-generated. Do not make direct changes to the file.
 {{#if description}}
@@ -218,7 +219,7 @@ const TS_DECLARATION_TEMPLATE = `/**
 {{/if}}
  */
 
-import { Model, Manager } from '{{modulePath}}';
+import { Model, Manager, ModelSummary, ModelSummaryFields } from '{{modulePath}}';
 import { StringOperators, NumberOperators, BooleanOperators, DateOperators } from '{{modulePath}}';
 import { QuerySet, LiveQuerySet, LiveQuerySetOptions, MetricResult, ResultTuple, SerializerOptions, NestedPaths } from '{{modulePath}}';
 
@@ -407,6 +408,14 @@ export class {{className}}Manager extends RuntimeManager {
   }
 }
 
+export interface {{summaryInterfaceName}} extends ModelSummaryFields {
+  {{primaryKeyField}}: number;
+  repr: {
+    str: string;
+    img?: string;
+  };
+}
+
 // Class declarations
 export declare class {{className}} extends Model implements {{interfaceName}} {
 {{#each properties}}
@@ -422,6 +431,21 @@ export declare class {{className}} extends Model implements {{interfaceName}} {
 
   constructor(data: Partial<{{interfaceName}}>);
   serialize(): Partial<{{interfaceName}}>;
+}
+
+export declare class {{summaryClassName}} extends ModelSummary implements {{summaryInterfaceName}} {
+  static configKey: string;
+  static modelName: string;
+  static primaryKeyField: string;
+  static fullModelConstructor: typeof {{className}};
+
+  {{primaryKeyField}}: number;
+  repr: {
+    str: string;
+    img?: string;
+  };
+
+  constructor(data: Partial<{{summaryInterfaceName}}>);
 }
 
 /**
@@ -643,8 +667,8 @@ function prepareTemplateData(
   if (schema.relationships) {
     for (const [propName, rel] of Object.entries(schema.relationships)) {
       const importPath = getImportPath(currentApp, rel.model);
-      jsImportSet.add(`import { ${rel.class_name} } from '${importPath}';`);
-      tsImportSet.add(`import { ${rel.class_name}Fields, ${rel.class_name}QuerySet, ${rel.class_name}LiveQuerySet } from '${importPath}';`);
+      jsImportSet.add(`import { ${rel.class_name}, ${rel.class_name}Summary } from '${importPath}';`);
+      tsImportSet.add(`import { ${rel.class_name}Fields, ${rel.class_name}SummaryFields, ${rel.class_name}QuerySet, ${rel.class_name}LiveQuerySet } from '${importPath}';`);
     }
   }
 
@@ -693,14 +717,11 @@ function generateTypeForProperty(
     const idType = (prop.type === 'integer' || prop.type === 'number')
       ? 'number'
       : (prop.type === 'string' ? 'string' : 'any');
-    
-    // No longer include Summary types in union
     return prop.format === 'many-to-many'
-      ? `Array<${relData.class_name}Fields | ${idType} | {type: string, id: ${idType}}>`
-      : `${relData.class_name}Fields | ${idType} | {type: string, id: ${idType}}`;
+      ? `Array<${relData.class_name}Fields | ${relData.class_name}SummaryFields | ${idType}>`
+      : `${relData.class_name}Fields | ${relData.class_name}SummaryFields | ${idType}`;
   }
 
-  // Rest of function remains unchanged
   if (prop.ref && prop.ref.startsWith("#/components/schemas/")) {
     const defName = prop.ref.split("/").pop() || prop.ref;
     return `${defName}Fields`;
