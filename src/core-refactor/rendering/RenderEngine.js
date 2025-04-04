@@ -5,7 +5,7 @@
 export class RenderEngine {
     /**
      * Create a new RenderEngine
-     * @param {QueryState} queryState - The QueryState instance to bind to
+     * @param {ModelStore} queryState - The ModelStore instance to bind to
      */
     constructor(queryState) {
       this.queryState = queryState;

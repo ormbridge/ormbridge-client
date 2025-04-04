@@ -3,7 +3,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 // Import fake-indexeddb/auto to auto-patch all required IndexedDB interfaces
 import 'fake-indexeddb/auto';
 
-import { QueryState, Operation } from '../../src/core-refactor/state/QueryState.js';
+import { ModelStore, Operation } from '../../src/core-refactor/state/ModelStore.js';
 import { RenderEngine } from '../../src/core-refactor/rendering/RenderEngine.js';
 
 // --- Test Data and Setup ---
@@ -17,7 +17,7 @@ const updatedData = [
   { id: 3, name: 'Charlie', version: 1 },
 ];
 let fetchMock;
-// Keep track of QueryState instances created in tests to ensure they are destroyed
+// Keep track of ModelStore instances created in tests to ensure they are destroyed
 let activeStates = [];
 
 // --- Vitest Setup ---
@@ -45,7 +45,7 @@ afterEach(async () => {
   activeStates = []; // Clear the list
 
   // --- Database Cleanup Phase (using the fake DB) ---
-  const dbName = 'test_modelsync_cache'; // Ensure this matches createCachedQueryState
+  const dbName = 'test_modelsync_cache'; // Ensure this matches createCachedModelStore
   try {
     await new Promise((resolve, reject) => {
       const deleteRequest = indexedDB.deleteDatabase(dbName);
@@ -69,7 +69,7 @@ afterEach(async () => {
 });
 
 // --- Helper ---
-const createCachedQueryState = (options = {}) => {
+const createCachedModelStore = (options = {}) => {
   const defaults = {
     primaryKey: 'id',
     fetchGroundTruth: fetchMock,
@@ -87,17 +87,17 @@ const createCachedQueryState = (options = {}) => {
       finalOptions.fetchGroundTruth = fetchMock;
   }
 
-  const newState = new QueryState(finalOptions);
+  const newState = new ModelStore(finalOptions);
   activeStates.push(newState); // Track for cleanup
   return newState;
 };
 
 // --- Test Suite ---
-describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
+describe('ModelStore with IndexedDB Cache Integration (Real Timers)', () => {
 
   test('should load data from cache if available', async () => {
     // Phase 1: Populate Cache
-    let state1 = createCachedQueryState();
+    let state1 = createCachedModelStore();
     // ensureCacheLoaded waits for the initial load/save logic associated with constructor/sync
     await state1.ensureCacheLoaded(); // Wait for initial load attempt
     await state1.sync(); // Populates GT and triggers save
@@ -105,7 +105,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
     // Phase 2: Load from Cache
     const loadingFetchMock = vi.fn();
-    let state2 = createCachedQueryState({ fetchGroundTruth: loadingFetchMock });
+    let state2 = createCachedModelStore({ fetchGroundTruth: loadingFetchMock });
     // Wait for the constructor's async cache load to complete
     await state2.ensureCacheLoaded(); // Crucial: wait for loading promise
 
@@ -119,7 +119,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
   test('should fetch ground truth if cache is empty', async () => {
     // Cache should be empty due to afterEach cleanup
-    const state = createCachedQueryState();
+    const state = createCachedModelStore();
     // Wait for the initial load attempt (which finds nothing)
     await state.ensureCacheLoaded();
 
@@ -139,7 +139,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
   test('should save state to cache after successful sync', async () => {
     // Phase 1: Sync and Save
-    const state1 = createCachedQueryState();
+    const state1 = createCachedModelStore();
     await state1.ensureCacheLoaded();
     state1.add({ type: 'create', instances: [{ id: 3, name: 'Charlie', version: 1 }] });
     fetchMock.mockResolvedValueOnce(JSON.parse(JSON.stringify(updatedData)));
@@ -150,7 +150,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
     await state1.destroy();
 
     // Phase 2: Load and Verify
-    const state2 = createCachedQueryState({ fetchGroundTruth: vi.fn() });
+    const state2 = createCachedModelStore({ fetchGroundTruth: vi.fn() });
     await state2.ensureCacheLoaded(); // Wait for load
 
     expect(state2.getGroundTruth()).toEqual(updatedData);
@@ -161,7 +161,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
   test('should load operations from cache', async () => {
     // Phase 1: Populate Cache with Operations
-    const state1 = createCachedQueryState();
+    const state1 = createCachedModelStore();
     await state1.ensureCacheLoaded();
     await state1.sync(); // Get initial GT & save
 
@@ -175,7 +175,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
     await state1.destroy();
 
     // Phase 2: Load from Cache
-    const state2 = createCachedQueryState({ fetchGroundTruth: vi.fn() });
+    const state2 = createCachedModelStore({ fetchGroundTruth: vi.fn() });
     await state2.ensureCacheLoaded(); // Wait for load
 
     expect(state2.getGroundTruth()).toEqual(initialData);
@@ -201,13 +201,13 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
   test('should update staleness flag correctly', async () => {
     // Phase 1: Populate Cache
-    const state1 = createCachedQueryState();
+    const state1 = createCachedModelStore();
     await state1.ensureCacheLoaded();
     await state1.sync();
     await state1.destroy();
 
     // Phase 2: Load and Check Stale
-    const state2 = createCachedQueryState();
+    const state2 = createCachedModelStore();
     await state2.ensureCacheLoaded(); // Wait for load
     expect(state2.isStale).toBe(true);
 
@@ -223,7 +223,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
   test('should auto-sync after cache load if configured', async () => {
     // Phase 1: Populate Cache
-    const state1 = createCachedQueryState();
+    const state1 = createCachedModelStore();
     await state1.ensureCacheLoaded();
     await state1.sync();
     await state1.destroy();
@@ -234,7 +234,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
     let syncCompleted = false;
     const syncPromise = new Promise(resolve => {
-        const state2 = createCachedQueryState({
+        const state2 = createCachedModelStore({
             fetchGroundTruth: autoSyncFetchMock,
             cacheAutoSync: true,
             cacheSyncDelay: syncDelay, // Use the short delay
@@ -278,7 +278,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
   test('should clear cache via clearCache() method', async () => {
     // Phase 1: Populate Cache
-    const state1 = createCachedQueryState();
+    const state1 = createCachedModelStore();
     await state1.ensureCacheLoaded();
     await state1.sync();
     expect(state1.getGroundTruth()).toEqual(initialData);
@@ -289,7 +289,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
     // Phase 3: Verify Cache is Empty
     const loadAfterClearFetchMock = vi.fn().mockResolvedValue(JSON.parse(JSON.stringify(initialData)));
-    const state2 = createCachedQueryState({fetchGroundTruth: loadAfterClearFetchMock});
+    const state2 = createCachedModelStore({fetchGroundTruth: loadAfterClearFetchMock});
     await state2.ensureCacheLoaded(); // Wait for load attempt
 
     expect(state2.getGroundTruth()).toEqual([]); // Should be empty
@@ -311,13 +311,13 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
     const testMaxOperationAge = 15 * 1000;
 
     // Phase 1: Populate Cache (Initial Data)
-    const state1 = createCachedQueryState({ maxOperationAge: testMaxOperationAge });
+    const state1 = createCachedModelStore({ maxOperationAge: testMaxOperationAge });
     await state1.ensureCacheLoaded();
     await state1.sync(); // Save initialData
     await state1.destroy();
 
     // Phase 2: Load, Add Mixed Operations, Manipulate Timestamp
-    const state2 = createCachedQueryState({ maxOperationAge: testMaxOperationAge });
+    const state2 = createCachedModelStore({ maxOperationAge: testMaxOperationAge });
     await state2.ensureCacheLoaded(); // Wait for load from cache
 
     expect(state2.getGroundTruth()).toEqual(initialData);
@@ -358,7 +358,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
     await state2.destroy(); // Saves the state with only the inflight op
 
     // Phase 4: Verify Saved State (Load again)
-    const state3 = createCachedQueryState({
+    const state3 = createCachedModelStore({
         maxOperationAge: testMaxOperationAge,
         fetchGroundTruth: vi.fn() // Prevent network call on load
     });
@@ -377,7 +377,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
   test('should handle errors during cache load gracefully', async () => {
     // Phase 1: Setup corrupted data
-    const state1 = createCachedQueryState();
+    const state1 = createCachedModelStore();
     await state1.ensureCacheLoaded();
     await state1.sync(); // Save valid initialData first
 
@@ -400,7 +400,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
     // Phase 2: Attempt to Load with Corrupted Data
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const state2 = createCachedQueryState();
+    const state2 = createCachedModelStore();
 
     // Wait for the load attempt, which should now fail deserialization
     await state2.ensureCacheLoaded();
@@ -433,7 +433,7 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
  });
 
    test('should handle errors during cache save gracefully', async () => {
-    const state = createCachedQueryState();
+    const state = createCachedModelStore();
     await state.ensureCacheLoaded(); // Wait for initial load attempt
 
     // Mock the storage layer's save method to fail
@@ -451,13 +451,13 @@ describe('QueryState with IndexedDB Cache Integration (Real Timers)', () => {
 
     // Expect the error logged by the sync() method's catch block
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Sync completed but cache save failed:', // Message from QueryState.sync
+        'Sync completed but cache save failed:', // Message from ModelStore.sync
         saveError // The specific error instance
     );
 
     // Also check that the lower-level error from storage was logged
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Sync completed but cache save failed:", // Message from QueryState.sync
+        "Sync completed but cache save failed:", // Message from ModelStore.sync
         saveError
     );
 

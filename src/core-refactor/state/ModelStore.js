@@ -1,6 +1,6 @@
 import { v7 as uuidv7 } from "uuid";
 import { IndexedDBStorage } from "../storage/IndexedDBStorage";
-import { QueryStateSerializer } from "../serialization/QueryStateSerializer";
+import { ModelStoreSerializer } from "../serialization/ModelStoreSerializer";
 
 /**
  * Operation class represents a single change to the data
@@ -15,7 +15,7 @@ export class Operation {
   }
 }
 
-export class QueryState {
+export class ModelStore {
   constructor(options) {
     this.pkField = options.primaryKey;
     this.ItemClass = options.ItemClass;
@@ -60,7 +60,7 @@ export class QueryState {
       });
 
       // Create serializer
-      this._serializer = new QueryStateSerializer({
+      this._serializer = new ModelStoreSerializer({
         ItemClass: this.ItemClass,
         primaryKey: this.pkField
       });
@@ -367,10 +367,10 @@ export class QueryState {
   }
 
    /**
-   * Clean up resources when this QueryState is no longer needed
+   * Clean up resources when this ModelStore is no longer needed
    */
    async destroy() {
-    console.log("Destroying QueryState...");
+    console.log("Destroying ModelStore...");
     this.stopSync();
 
     // Clean up cache resources if enabled
@@ -395,7 +395,7 @@ export class QueryState {
     }
 
     this.subscribers.clear();
-    console.log("QueryState destroyed.");
+    console.log("ModelStore destroyed.");
   }
 
   // ========== Cache Management Methods (Internal) ==========

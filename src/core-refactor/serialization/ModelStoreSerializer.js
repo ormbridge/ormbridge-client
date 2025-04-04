@@ -1,8 +1,8 @@
 /**
- * Helper class for serializing and deserializing QueryState data
+ * Helper class for serializing and deserializing ModelStore data
  * Manages the conversion between model instances and storable data
  */
-export class QueryStateSerializer {
+export class ModelStoreSerializer {
     /**
      * @param {Object} options Serialization options
      * @param {Function} options.ItemClass Model class constructor
@@ -156,8 +156,8 @@ export class QueryStateSerializer {
     }
   
     /**
-     * Prepare the full QueryState for storage
-     * @param {Object} queryState QueryState to serialize
+     * Prepare the full ModelStore for storage
+     * @param {Object} queryState ModelStore to serialize
      * @returns {Object} Serialized state ready for storage
      */
     serialize(queryState) {
@@ -170,7 +170,7 @@ export class QueryStateSerializer {
     }
   
     /**
-     * Deserialize the full QueryState data
+     * Deserialize the full ModelStore data
      * @param {Object} data Serialized data
      * @param {Function} Operation Operation class constructor
      * @returns {Object} Deserialized state

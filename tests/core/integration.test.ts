@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi, beforeAll, afterAll } from 'vitest';
 import 'fake-indexeddb/auto'; // Patch IDB for testing
 
-import { QueryState } from '../../src/core-refactor/state/QueryState.js';
+import { ModelStore } from '../../src/core-refactor/state/ModelStore.js';
 import { RenderEngine } from '../../src/core-refactor/rendering/RenderEngine.js';
 import { Metric } from '../../src/core-refactor/state/MetricState.js';
 import { 
@@ -106,7 +106,7 @@ class SimpleDB {
 }
 
 /**
- * IntegrationTestHelper - Helper class for integration testing of QueryState with metrics
+ * IntegrationTestHelper - Helper class for integration testing of ModelStore with metrics
  * Manages test state, provides factory methods for creating test components, and handles cleanup
  */
 class IntegrationTestHelper {
@@ -145,8 +145,8 @@ class IntegrationTestHelper {
       };
     }
   
-    // Create QueryState with persistence options
-    createQueryState(options = {}) {
+    // Create ModelStore with persistence options
+    createModelStore(options = {}) {
       // Initialize fetch mocks if needed
       if (!this.fetchMocks) {
           this.fetchMocks = this.createFetchMocks();
@@ -164,13 +164,13 @@ class IntegrationTestHelper {
         cacheStoreName: this.testStoreName
       };
   
-      const state = new QueryState({...defaults, ...options});
+      const state = new ModelStore({...defaults, ...options});
       this.activeStates.push(state);
       return state;
     }
   
-    // Create metrics for QueryState
-    createMetrics(queryState) {
+    // Create metrics for ModelStore
+    createMetrics(modelStore) {
       // Initialize fetch mocks if needed
       if (!this.fetchMocks) {
           this.fetchMocks = this.createFetchMocks();
@@ -178,28 +178,28 @@ class IntegrationTestHelper {
       
       const metrics = {
         count: new Metric({
-          queryStateInstance: queryState,
+          modelStoreInstance: modelStore,
           fetchMetricValue: this.fetchMocks.fetchCount,
           initialValue: this._initialMetricValues.count,
           name: 'TotalCount'
         }),
   
         sum: new Metric({
-          queryStateInstance: queryState,
+          modelStoreInstance: modelStore,
           fetchMetricValue: this.fetchMocks.fetchSum,
           initialValue: this._initialMetricValues.sum,
           name: 'SalarySum'
         }),
   
         min: new Metric({
-          queryStateInstance: queryState,
+          modelStoreInstance: modelStore,
           fetchMetricValue: this.fetchMocks.fetchMin,
           initialValue: this._initialMetricValues.min,
           name: 'MinSalary'
         }),
   
         max: new Metric({
-          queryStateInstance: queryState,
+          modelStoreInstance: modelStore,
           fetchMetricValue: this.fetchMocks.fetchMax,
           initialValue: this._initialMetricValues.max,
           name: 'MaxSalary'
@@ -210,40 +210,40 @@ class IntegrationTestHelper {
       return metrics;
     }
   
-    // Create a render engine for QueryState
-    createRenderEngine(queryState) {
-      const renderEngine = new RenderEngine(queryState);
+    // Create a render engine for ModelStore
+    createRenderEngine(modelStore) {
+      const renderEngine = new RenderEngine(modelStore);
       renderEngine.subscribeToChanges(); // Enable cache invalidation
       this.activeRenderEngines.push(renderEngine);
       return renderEngine;
     }
   
     // Create metric render engines with different strategies
-    createMetricRenderEngines(queryState, metrics, renderEngine) {
+    createMetricRenderEngines(modelStore, metrics, renderEngine) {
       const metricRenderEngines = {
         count: new MetricRenderEngine(
-          queryState,
+          modelStore,
           metrics.count,
           new CountStrategy(),
           renderEngine
         ),
   
         sum: new MetricRenderEngine(
-          queryState,
+          modelStore,
           metrics.sum,
           new SumStrategy(),
           renderEngine
         ),
   
         min: new MetricRenderEngine(
-          queryState,
+          modelStore,
           metrics.min,
           new MinStrategy(),
           renderEngine
         ),
   
         max: new MetricRenderEngine(
-          queryState,
+          modelStore,
           metrics.max,
           new MaxStrategy(),
           renderEngine
@@ -254,7 +254,7 @@ class IntegrationTestHelper {
       return metricRenderEngines;
     }
   
-    // Apply operations to the direct DB to keep it in sync with QueryState
+    // Apply operations to the direct DB to keep it in sync with ModelStore
     syncOperation(operation, directDB) {
       const { type, instances } = operation;
   
@@ -299,7 +299,7 @@ class IntegrationTestHelper {
     }
   }
 
-describe('QueryState Persistence with Metrics Integration', () => {
+describe('ModelStore Persistence with Metrics Integration', () => {
   let helper;
   
   beforeEach(() => {
@@ -313,9 +313,9 @@ describe('QueryState Persistence with Metrics Integration', () => {
     await helper.cleanup();
   });
 
-test('should persist and restore QueryState with operations and render metrics correctly', async () => {
-    // Phase 1: Setup initial QueryState and perform operations
-    const state1 = helper.createQueryState();
+test('should persist and restore ModelStore with operations and render metrics correctly', async () => {
+    // Phase 1: Setup initial ModelStore and perform operations
+    const state1 = helper.createModelStore();
     await state1.ensureCacheLoaded();
     await state1.sync(); // Fetch and save ground truth
     
@@ -377,8 +377,8 @@ test('should persist and restore QueryState with operations and render metrics c
     // Reset fetch mocks to track if they get called during restore
     helper.fetchMocks = helper.createFetchMocks();
     
-    // Create new QueryState pointing to same cache
-    const state2 = helper.createQueryState({
+    // Create new ModelStore pointing to same cache
+    const state2 = helper.createModelStore({
       fetchGroundTruth: helper.fetchMocks.fetchData
     });
     
@@ -476,8 +476,8 @@ test('should persist and restore QueryState with operations and render metrics c
   });
 
   test('should handle operation confirmation and rejection across persistence boundary', async () => {
-    // Phase 1: Setup QueryState with pending operations
-    const state1 = helper.createQueryState();
+    // Phase 1: Setup ModelStore with pending operations
+    const state1 = helper.createModelStore();
     await state1.ensureCacheLoaded();
     await state1.sync();
     
@@ -522,8 +522,8 @@ test('should persist and restore QueryState with operations and render metrics c
     // Reset fetch mocks
     helper.fetchMocks = helper.createFetchMocks();
     
-    // Create new QueryState pointing to same cache
-    const state2 = helper.createQueryState({
+    // Create new ModelStore pointing to same cache
+    const state2 = helper.createModelStore({
       fetchGroundTruth: helper.fetchMocks.fetchData
     });
     
@@ -589,8 +589,8 @@ test('should persist and restore QueryState with operations and render metrics c
     // Reset fetch mocks
     helper.fetchMocks = helper.createFetchMocks();
     
-    // Create third QueryState instance pointing to same cache
-    const state3 = helper.createQueryState({
+    // Create third ModelStore instance pointing to same cache
+    const state3 = helper.createModelStore({
       fetchGroundTruth: helper.fetchMocks.fetchData
     });
     
@@ -636,7 +636,7 @@ test('should persist and restore QueryState with operations and render metrics c
 
   test('should handle automatic sync after cache restore', async () => {
     // Phase 1: Setup initial state
-    const state1 = helper.createQueryState();
+    const state1 = helper.createModelStore();
     await state1.ensureCacheLoaded();
     await state1.sync();
     await state1._saveToCache();
@@ -664,7 +664,7 @@ test('should persist and restore QueryState with operations and render metrics c
     // Create promise to wait for sync completion
     let syncCompletedPromise;
     
-    const state2 = helper.createQueryState({
+    const state2 = helper.createModelStore({
       cacheAutoSync: true,        // Enable auto-sync
       cacheSyncDelay: 10,         // Short delay
       fetchGroundTruth: helper.fetchMocks.fetchData

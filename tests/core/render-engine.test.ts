@@ -1,8 +1,8 @@
 /**
- * RenderEngine and QueryState tests using Vitest
+ * RenderEngine and ModelStore tests using Vitest
  */
 import { describe, test, expect, beforeEach, vi, afterEach } from 'vitest';
-import { QueryState } from '../../src/core-refactor/state/QueryState.js';
+import { ModelStore } from '../../src/core-refactor/state/ModelStore.js';
 import { RenderEngine } from '../../src/core-refactor/rendering/RenderEngine.js';
 
 // Simple in-memory database for comparison
@@ -66,8 +66,8 @@ describe('RenderEngine', () => {
     // Reset direct DB for each test
     directDB = new SimpleDB(initialData, 'id');
 
-    // Set up QueryState and RenderEngine
-    queryState = new QueryState({
+    // Set up ModelStore and RenderEngine
+    queryState = new ModelStore({
       primaryKey: 'id',
       fetchGroundTruth: () => Promise.resolve([...initialData])
     });
@@ -83,7 +83,7 @@ describe('RenderEngine', () => {
     // Direct operation
     directDB.create({ id: 4, name: 'Dave', role: 'manager' });
 
-    // QueryState operation
+    // ModelStore operation
     queryState.add({
       type: 'create',
       instances: [{ id: 4, name: 'Dave', role: 'manager' }]
@@ -100,7 +100,7 @@ describe('RenderEngine', () => {
     // Direct operation
     directDB.update({ id: 2, role: 'admin' });
 
-    // QueryState operation
+    // ModelStore operation
     queryState.add({
       type: 'update',
       instances: [{ id: 2, role: 'admin' }]
@@ -117,7 +117,7 @@ describe('RenderEngine', () => {
     // Direct operation
     directDB.delete(3);
 
-    // QueryState operation
+    // ModelStore operation
     queryState.add({
       type: 'delete',
       instances: [3]
@@ -137,7 +137,7 @@ describe('RenderEngine', () => {
     directDB.update({ id: 4, role: 'admin' });
     directDB.delete(1);
 
-    // QueryState operations
+    // ModelStore operations
     queryState.add({
       type: 'create',
       instances: [{ id: 4, name: 'Dave', role: 'manager' }]
@@ -272,8 +272,8 @@ describe('RenderEngine High Frequency & Edge Cases', () => {
     // Mock fetch function
     fetchMock = vi.fn().mockResolvedValue(JSON.parse(JSON.stringify(initialData)));
 
-    // Set up QueryState and RenderEngine
-    queryState = new QueryState({
+    // Set up ModelStore and RenderEngine
+    queryState = new ModelStore({
       primaryKey: 'id',
       fetchGroundTruth: fetchMock,
       syncInterval: 0, // Disable automatic periodic sync for tests
@@ -519,7 +519,7 @@ describe('RenderEngine High Frequency & Edge Cases', () => {
 
     processOpsSpy.mockClear();
 
-    // --- Add Operation (Cache Invalidated by QueryState update) ---
+    // --- Add Operation (Cache Invalidated by ModelStore update) ---
     const opId = queryState.add({ type: 'create', instances: [{ id: 4, name: 'Dave', role: 'manager' }] });
     const versionAfterAdd = queryState.version;
     expect(versionAfterAdd).toBeGreaterThan(initialVersion); // Version bumped by add
@@ -538,7 +538,7 @@ describe('RenderEngine High Frequency & Edge Cases', () => {
 
     processOpsSpy.mockClear();
 
-    // --- Confirm Operation (Cache Invalidated by QueryState update) ---
+    // --- Confirm Operation (Cache Invalidated by ModelStore update) ---
     queryState.confirm(opId);
     const versionAfterConfirm = queryState.version;
     expect(versionAfterConfirm).toBeGreaterThan(versionAfterAdd); // Version bumped by confirm
@@ -582,7 +582,7 @@ describe('RenderEngine High Frequency & Edge Cases', () => {
     vi.advanceTimersByTime(testMaxOperationAge + 1); // Advance clock past expiry time
     const versionBeforeSync2 = queryState.version;
     fetchMock.mockResolvedValueOnce(JSON.parse(JSON.stringify(initialData))); // Fetch returns 3 items again
-    await queryState.sync(); // This sync will trigger the trim internally in QueryState
+    await queryState.sync(); // This sync will trigger the trim internally in ModelStore
     const versionAfterSync2 = queryState.version;
     expect(versionAfterSync2).toBeGreaterThan(versionBeforeSync2); // Version bumped by op removal notification
 
@@ -594,7 +594,7 @@ describe('RenderEngine High Frequency & Edge Cases', () => {
     expect(processOpsSpy).toHaveBeenCalledTimes(1); // Cache miss
     directDB = new SimpleDB(initialData, 'id'); // Reset directDB to reflect final state (3 items)
     expect(renderAfterSync2Sorted).toEqual(directDB.getAll(sortByName)); // Expect 3 items, sorted
-    expect(queryState.operations.has(opId)).toBe(false); // Operation trimmed from QueryState
+    expect(queryState.operations.has(opId)).toBe(false); // Operation trimmed from ModelStore
     expect(renderEngine._cache.queryStateVersion).toBe(versionAfterSync2); // Cache updated
     expect(renderEngine._cache.processedData.length).toBe(3); // Cache reflects only ground truth
     expect(renderEngine._cache.processedData.map(i => i.id).sort()).toEqual([1, 2, 3]);
