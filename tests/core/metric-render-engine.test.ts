@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, vi, afterEach } from 'vitest';
-import { QueryState } from '../../src/core-refactor/state/QueryState.js';
+import { ModelStore } from '../../src/core-refactor/state/ModelStore.js';
 import { RenderEngine } from '../../src/core-refactor/rendering/RenderEngine.js';
 import {
     Metric
@@ -110,7 +110,7 @@ describe('Metric', () => {
 
     beforeEach(() => {
         fetchMetricMock = vi.fn().mockResolvedValue(42);
-        queryState = new QueryState({
+        queryState = new ModelStore({
             primaryKey: 'id',
             fetchGroundTruth: () => Promise.resolve([...initialData]), // Use copy
         });
@@ -136,7 +136,7 @@ describe('Metric', () => {
 
     test('should throw error if required options are missing', () => {
         expect(() => new Metric()).toThrow();
-        // Need mock QueryState with subscribe for this test
+        // Need mock ModelStore with subscribe for this test
         const mockQS = { subscribe: vi.fn(() => vi.fn()), addListener: vi.fn(), removeListener: vi.fn() };
         expect(() => new Metric({})).toThrow();
         expect(() => new Metric({ queryStateInstance: mockQS })).toThrow();
@@ -158,14 +158,14 @@ describe('Metric', () => {
         metric.destroy();
     });
 
-    test('should subscribe to QueryState sync events', async () => {
+    test('should subscribe to ModelStore sync events', async () => {
         const metric = new Metric({
             queryStateInstance: queryState,
             fetchMetricValue: fetchMetricMock,
             name: 'SyncSubTest'
         });
 
-        // Manually trigger the event QueryState would emit
+        // Manually trigger the event ModelStore would emit
         queryState._notify('sync_started', {});
 
         // Give promise chance to resolve (fetchMetricValue is async)
@@ -185,7 +185,7 @@ describe('Metric', () => {
         });
         expect(metric.value).toBe(null);
 
-        // Trigger sync manually (like Metric._subscribeToQueryState would)
+        // Trigger sync manually (like Metric._subscribeToModelStore would)
         await metric.sync();
 
         expect(metric.value).toBe(100);
@@ -212,13 +212,13 @@ describe('Metric', () => {
     test('should clean up subscription on destroy', () => {
         const unsubscribeMock = vi.fn();
         const subscribeMock = vi.fn().mockReturnValue(unsubscribeMock);
-        const mockQueryState = {
+        const mockModelStore = {
             subscribe: subscribeMock,
-            // Add other methods if needed by QueryState constructor or Metric
+            // Add other methods if needed by ModelStore constructor or Metric
         };
 
         const metric = new Metric({
-            queryStateInstance: mockQueryState,
+            queryStateInstance: mockModelStore,
             fetchMetricValue: fetchMetricMock
         });
 
@@ -255,13 +255,13 @@ describe('MetricRenderEngine', () => {
     fetchMinMock = vi.fn().mockResolvedValue(directDB.min('salary'));
     fetchMaxMock = vi.fn().mockResolvedValue(directDB.max('salary'));
 
-    // Set up QueryState and RenderEngine
-    queryState = new QueryState({
+    // Set up ModelStore and RenderEngine
+    queryState = new ModelStore({
       primaryKey: 'id',
       fetchGroundTruth: () => Promise.resolve(initialData.map(i => ({...i}))) // Return copies
     });
 
-    // Initialize ground truth IN QueryState
+    // Initialize ground truth IN ModelStore
     queryState._setGroundTruth(initialData.map(i => ({...i}))); // Use copies
 
     renderEngine = new RenderEngine(queryState);
@@ -300,7 +300,7 @@ describe('MetricRenderEngine', () => {
      minMetric?.destroy();
      maxMetric?.destroy();
      renderEngine?.destroy(); // Assuming RenderEngine might have cleanup
-     queryState?.destroy(); // Assuming QueryState has cleanup
+     queryState?.destroy(); // Assuming ModelStore has cleanup
      vi.restoreAllMocks();
    });
 
@@ -691,7 +691,7 @@ describe('MinStrategy', () => {
        calculateSpy.mockRestore();
      });
 
-     test('should invalidate cache when QueryState changes', () => {
+     test('should invalidate cache when ModelStore changes', () => {
        const initialResult = metricRender.render();
        const calculateSpy = vi.spyOn(strategy, 'calculate');
 
@@ -767,7 +767,7 @@ describe('MetricRenderEngine Edge Cases', () => {
     // Set up empty test DB
     const emptyDB = new SimpleDB([]);
     
-    // Delete all items from QueryState and directDB
+    // Delete all items from ModelStore and directDB
     const allIds = initialData.map(item => item.id);
     queryState.add({ type: 'delete', instances: allIds });
     directDB.delete(allIds); // DB is now empty
@@ -982,11 +982,11 @@ describe('MetricRenderEngine Edge Cases', () => {
   });
   });
 
-  // --- Integration with QueryState ---
-describe('MetricRenderEngine Integration with QueryState', () => {
+  // --- Integration with ModelStore ---
+describe('MetricRenderEngine Integration with ModelStore', () => {
   // Uses metrics from outer scope
 
-  test('should synchronize metrics during QueryState sync', async () => {
+  test('should synchronize metrics during ModelStore sync', async () => {
     const countStrategy = new CountStrategy();
     const sumStrategy = new SumStrategy();
     const countMetricRender = new MetricRenderEngine(queryState, countMetric, countStrategy, renderEngine);
@@ -1017,7 +1017,7 @@ describe('MetricRenderEngine Integration with QueryState', () => {
     // Mock the main ground truth fetch as well
     queryState.fetchGroundTruth = vi.fn().mockResolvedValue(updatedData);
 
-    // Sync QueryState - this triggers Metric.sync internally via subscription
+    // Sync ModelStore - this triggers Metric.sync internally via subscription
     await queryState.sync();
 
     // Check if mocks were called
