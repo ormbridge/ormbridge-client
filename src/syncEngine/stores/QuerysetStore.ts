@@ -3,7 +3,7 @@ import { getStoreKey } from './utils';
 import { IndexedDBStorage } from '../persistence/IndexedDBStorage';
 import hash from 'object-hash';
 
-export type OperationType = 'create' | 'update' | 'delete';
+export type OperationType = 'create' | 'update' | 'delete' | 'update_or_create' | 'get_or_create';
 export type OperationStatus = 'inflight' | 'confirmed' | 'rejected';
 
 export interface OperationData<T extends Record<string, any>> {
@@ -182,11 +182,13 @@ export class QuerysetStore<T extends Record<string, any>> {
             const pk = instance[this.pkField];
             switch (operation.type) {
                 case 'create':
+                case 'get_or_create':
                     if (!groundTruth.has(pk)) {
                         groundTruth.add(pk);
                     }
                     break;
                 case 'update':
+                case 'update_or_create':
                     if (groundTruth.has(pk)) {
                         break
                     } else {

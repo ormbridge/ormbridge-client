@@ -2,7 +2,7 @@ import { v7 as uuidv7 } from "uuid";
 import { IndexedDBStorage } from '../persistence/IndexedDBStorage'
 import { getStoreKey } from './utils'
 
-export type OperationType = 'create' | 'update' | 'delete';
+export type OperationType = 'create' | 'update' | 'delete' | 'update_or_create' | 'get_or_create';
 export type OperationStatus = 'inflight' | 'confirmed' | 'rejected';
 
 export interface OperationData<T extends Record<string, any>> {
@@ -41,7 +41,7 @@ export type FetchFunction<T extends Record<string, any>> = (params: { pks: any[]
 
 export class ModelStore<T extends Record<string, any>> {
     public modelClass: ModelClass<T>;
-    public fetchFunction: FetchFunction<T>;
+    public fetchFn: FetchFunction<T>;
     public groundTruthArray: T[];
     public operations: Operation<T>[];
     public isSyncing: boolean;
@@ -52,9 +52,9 @@ export class ModelStore<T extends Record<string, any>> {
     private _operationsKey: string;
     private _groundTruthKey: string;
 
-    constructor(modelClass: ModelClass<T>, fetchFunction: FetchFunction<T>, storage: IndexedDBStorage) {       
+    constructor(modelClass: ModelClass<T>, fetchFn: FetchFunction<T>, storage: IndexedDBStorage) {       
         this.modelClass = modelClass;
-        this.fetchFunction = fetchFunction;
+        this.fetchFn = fetchFn;
         this.groundTruthArray = [];
         this.operations = [];
         this.isSyncing = false;
@@ -207,11 +207,13 @@ export class ModelStore<T extends Record<string, any>> {
             const pk = instance[this.pkField];
             switch (operation.type) {
                 case 'create':
+                case 'get_or_create':
                     if (!groundTruth.has(pk)) {
                         groundTruth.set(pk, instance);
                     }
                     break;
                 case 'update':
+                case 'update_or_create':
                     if (groundTruth.has(pk)) {
                         // Merge existing instance with updates
                         groundTruth.set(pk, { ...groundTruth.get(pk), ...instance });
@@ -251,7 +253,7 @@ export class ModelStore<T extends Record<string, any>> {
         this.isSyncing = true;
 
         try {
-            const newGroundTruth = await this.fetchFunction({ pks: this.groundTruthPks });
+            const newGroundTruth = await this.fetchFn({ pks: this.groundTruthPks });
             this.groundTruthArray = newGroundTruth;
             this.operations = this.getTrimmedOperations();
             this.isSyncing = false;
