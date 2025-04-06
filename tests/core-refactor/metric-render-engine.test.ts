@@ -105,12 +105,12 @@ const initialData = [
 
 // --- Metric Tests (Keep as is) ---
 describe('Metric', () => {
-    let queryState;
+    let modelStore;
     let fetchMetricMock;
 
     beforeEach(() => {
         fetchMetricMock = vi.fn().mockResolvedValue(42);
-        queryState = new ModelStore({
+        modelStore = new ModelStore({
             primaryKey: 'id',
             fetchGroundTruth: () => Promise.resolve([...initialData]), // Use copy
         });
@@ -123,11 +123,11 @@ describe('Metric', () => {
 
     test('should construct properly with required options', () => {
         const metric = new Metric({
-            queryStateInstance: queryState,
+            modelStoreInstance: modelStore,
             fetchMetricValue: fetchMetricMock,
             name: 'TestMetric'
         });
-        expect(metric.queryState).toBe(queryState);
+        expect(metric.modelStore).toBe(modelStore);
         expect(metric.fetchMetricValue).toBe(fetchMetricMock);
         expect(metric.metricName).toBe('TestMetric');
         expect(metric.value).toBe(null);
@@ -139,18 +139,18 @@ describe('Metric', () => {
         // Need mock ModelStore with subscribe for this test
         const mockQS = { subscribe: vi.fn(() => vi.fn()), addListener: vi.fn(), removeListener: vi.fn() };
         expect(() => new Metric({})).toThrow();
-        expect(() => new Metric({ queryStateInstance: mockQS })).toThrow();
+        expect(() => new Metric({ modelStoreInstance: mockQS })).toThrow();
         expect(() => new Metric({ fetchMetricValue: fetchMetricMock })).toThrow();
     });
 
-     test('should throw error if queryStateInstance is invalid', () => {
-         expect(() => new Metric({ queryStateInstance: {}, fetchMetricValue: fetchMetricMock })).toThrow(/must have a 'subscribe' method/);
+     test('should throw error if modelStoreInstance is invalid', () => {
+         expect(() => new Metric({ modelStoreInstance: {}, fetchMetricValue: fetchMetricMock })).toThrow(/must have a 'subscribe' method/);
      });
 
 
     test('should support initial value', () => {
         const metric = new Metric({
-            queryStateInstance: queryState,
+            modelStoreInstance: modelStore,
             fetchMetricValue: fetchMetricMock,
             initialValue: 100
         });
@@ -160,13 +160,13 @@ describe('Metric', () => {
 
     test('should subscribe to ModelStore sync events', async () => {
         const metric = new Metric({
-            queryStateInstance: queryState,
+            modelStoreInstance: modelStore,
             fetchMetricValue: fetchMetricMock,
             name: 'SyncSubTest'
         });
 
         // Manually trigger the event ModelStore would emit
-        queryState._notify('sync_started', {});
+        modelStore._notify('sync_started', {});
 
         // Give promise chance to resolve (fetchMetricValue is async)
         await vi.waitFor(() => {
@@ -179,7 +179,7 @@ describe('Metric', () => {
     test('should update value after sync', async () => {
         fetchMetricMock.mockResolvedValue(100);
         const metric = new Metric({
-            queryStateInstance: queryState,
+            modelStoreInstance: modelStore,
             fetchMetricValue: fetchMetricMock,
             initialValue: null // Start with null
         });
@@ -197,7 +197,7 @@ describe('Metric', () => {
         const error = new Error('Sync failed');
         fetchMetricMock.mockRejectedValue(error);
         const metric = new Metric({
-            queryStateInstance: queryState,
+            modelStoreInstance: modelStore,
             fetchMetricValue: fetchMetricMock,
             initialValue: 50
         });
@@ -218,7 +218,7 @@ describe('Metric', () => {
         };
 
         const metric = new Metric({
-            queryStateInstance: mockModelStore,
+            modelStoreInstance: mockModelStore,
             fetchMetricValue: fetchMetricMock
         });
 
@@ -231,7 +231,7 @@ describe('Metric', () => {
 
         expect(unsubscribeMock).toHaveBeenCalled();
         // Optional: check if internal reference is cleared, though less critical than calling it
-        expect(metric.queryStateUnsubscriber).toBe(null);
+        expect(metric.modelStoreUnsubscriber).toBe(null);
     });
 });
 
@@ -239,7 +239,7 @@ describe('Metric', () => {
 // --- MetricRenderEngine Tests ---
 describe('MetricRenderEngine', () => {
   let directDB;
-  let queryState;
+  let modelStore;
   let renderEngine;
   // Define metrics and mocks in the main scope for access in tests
   let countMetric, sumMetric, minMetric, maxMetric;
@@ -256,37 +256,37 @@ describe('MetricRenderEngine', () => {
     fetchMaxMock = vi.fn().mockResolvedValue(directDB.max('salary'));
 
     // Set up ModelStore and RenderEngine
-    queryState = new ModelStore({
+    modelStore = new ModelStore({
       primaryKey: 'id',
       fetchGroundTruth: () => Promise.resolve(initialData.map(i => ({...i}))) // Return copies
     });
 
     // Initialize ground truth IN ModelStore
-    queryState._setGroundTruth(initialData.map(i => ({...i}))); // Use copies
+    modelStore._setGroundTruth(initialData.map(i => ({...i}))); // Use copies
 
-    renderEngine = new RenderEngine(queryState);
+    renderEngine = new RenderEngine(modelStore);
 
     // Create Metric instances with initial values matching directDB
     countMetric = new Metric({
-        queryStateInstance: queryState,
+        modelStoreInstance: modelStore,
         fetchMetricValue: fetchCountMock,
         initialValue: directDB.count(), // Use initial DB state
         name: 'TotalCount'
     });
      sumMetric = new Metric({
-        queryStateInstance: queryState,
+        modelStoreInstance: modelStore,
         fetchMetricValue: () => fetchSumMock('salary'), // Adjust mock if needed per test
         initialValue: directDB.sum('salary'),
         name: 'TotalSalary'
      });
      minMetric = new Metric({
-        queryStateInstance: queryState,
+        modelStoreInstance: modelStore,
         fetchMetricValue: () => fetchMinMock('salary'),
         initialValue: directDB.min('salary'),
         name: 'MinSalary'
      });
      maxMetric = new Metric({
-        queryStateInstance: queryState,
+        modelStoreInstance: modelStore,
         fetchMetricValue: () => fetchMaxMock('salary'),
         initialValue: directDB.max('salary'),
         name: 'MaxSalary'
@@ -300,7 +300,7 @@ describe('MetricRenderEngine', () => {
      minMetric?.destroy();
      maxMetric?.destroy();
      renderEngine?.destroy(); // Assuming RenderEngine might have cleanup
-     queryState?.destroy(); // Assuming ModelStore has cleanup
+     modelStore?.destroy(); // Assuming ModelStore has cleanup
      vi.restoreAllMocks();
    });
 
@@ -309,19 +309,19 @@ describe('MetricRenderEngine', () => {
   
     test('should calculate count correctly', () => {
       const strategy = new CountStrategy();
-      const metricRender = new MetricRenderEngine(queryState, countMetric, strategy, renderEngine);
+      const metricRender = new MetricRenderEngine(modelStore, countMetric, strategy, renderEngine);
       expect(metricRender.render()).toBe(directDB.count());
       metricRender.destroy();
     });
   
     test('should update count after create operation', () => {
       const strategy = new CountStrategy();
-      const metricRender = new MetricRenderEngine(queryState, countMetric, strategy, renderEngine);
+      const metricRender = new MetricRenderEngine(modelStore, countMetric, strategy, renderEngine);
       const initialCount = directDB.count();
   
       // Create new item
       const newItem = { id: 4, name: 'Dave', role: 'manager', salary: 90000, rating: 4.0, active: true };
-      queryState.add({
+      modelStore.add({
         type: 'create',
         instances: [newItem]
       });
@@ -334,11 +334,11 @@ describe('MetricRenderEngine', () => {
   
     test('should update count after delete operation', () => {
       const strategy = new CountStrategy();
-      const metricRender = new MetricRenderEngine(queryState, countMetric, strategy, renderEngine);
+      const metricRender = new MetricRenderEngine(modelStore, countMetric, strategy, renderEngine);
       const initialCount = directDB.count();
   
       // Delete item
-      queryState.add({ type: 'delete', instances: [1] });
+      modelStore.add({ type: 'delete', instances: [1] });
       directDB.delete(1);
   
       expect(metricRender.render()).toBe(initialCount - 1);
@@ -348,7 +348,7 @@ describe('MetricRenderEngine', () => {
   
     test('should handle field-specific count', () => {
       const strategy = new CountStrategy();
-      const metricRender = new MetricRenderEngine(queryState, countMetric, strategy, renderEngine);
+      const metricRender = new MetricRenderEngine(modelStore, countMetric, strategy, renderEngine);
   
       // Count items with 'rating' field initially
       const initialRatingCount = directDB.countField('rating');
@@ -356,7 +356,7 @@ describe('MetricRenderEngine', () => {
   
       // Add item without rating field
       const newItem = { id: 4, name: 'Dave', role: 'manager', salary: 90000 };
-      queryState.add({
+      modelStore.add({
         type: 'create',
         instances: [newItem]
       });
@@ -378,27 +378,27 @@ describe('SumStrategy', () => {
 
   test('should calculate sum correctly', () => {
     const strategy = new SumStrategy();
-    const metricRender = new MetricRenderEngine(queryState, sumMetric, strategy, renderEngine);
+    const metricRender = new MetricRenderEngine(modelStore, sumMetric, strategy, renderEngine);
     expect(metricRender.render('salary')).toBe(directDB.sum('salary'));
     metricRender.destroy();
   });
 
   test('should throw error if field is not provided', () => {
     const strategy = new SumStrategy();
-    const metricRender = new MetricRenderEngine(queryState, sumMetric, strategy, renderEngine);
+    const metricRender = new MetricRenderEngine(modelStore, sumMetric, strategy, renderEngine);
     expect(() => metricRender.render()).toThrow('SumStrategy requires a field parameter');
     metricRender.destroy();
   });
 
   test('should update sum after create operation', () => {
     const strategy = new SumStrategy();
-    const metricRender = new MetricRenderEngine(queryState, sumMetric, strategy, renderEngine);
+    const metricRender = new MetricRenderEngine(modelStore, sumMetric, strategy, renderEngine);
     const initialSum = directDB.sum('salary');
     const newSalary = 90000;
 
     // Create new item with salary
     const newItem = { id: 4, name: 'Dave', salary: newSalary };
-    queryState.add({
+    modelStore.add({
       type: 'create',
       instances: [newItem]
     });
@@ -411,7 +411,7 @@ describe('SumStrategy', () => {
 
   test('should update sum after update operation', () => {
     const strategy = new SumStrategy();
-    const metricRender = new MetricRenderEngine(queryState, sumMetric, strategy, renderEngine);
+    const metricRender = new MetricRenderEngine(modelStore, sumMetric, strategy, renderEngine);
     const initialSum = directDB.sum('salary');
     
     // Get original item
@@ -421,7 +421,7 @@ describe('SumStrategy', () => {
     const expectedDiff = newSalary - originalSalary;
 
     // Update item
-    queryState.add({ type: 'update', instances: [{ id: 1, salary: newSalary }] });
+    modelStore.add({ type: 'update', instances: [{ id: 1, salary: newSalary }] });
     directDB.update({ id: 1, salary: newSalary });
 
     expect(metricRender.render('salary')).toBe(initialSum + expectedDiff);
@@ -431,7 +431,7 @@ describe('SumStrategy', () => {
 
   test('should update sum after delete operation', () => {
     const strategy = new SumStrategy();
-    const metricRender = new MetricRenderEngine(queryState, sumMetric, strategy, renderEngine);
+    const metricRender = new MetricRenderEngine(modelStore, sumMetric, strategy, renderEngine);
     const initialSum = directDB.sum('salary');
     
     // Get original item to calculate expected difference
@@ -440,7 +440,7 @@ describe('SumStrategy', () => {
     const expectedDiff = -deletedSalary;
 
     // Delete item
-    queryState.add({ type: 'delete', instances: [1] });
+    modelStore.add({ type: 'delete', instances: [1] });
     directDB.delete(1);
 
     expect(metricRender.render('salary')).toBe(initialSum + expectedDiff);
@@ -450,12 +450,12 @@ describe('SumStrategy', () => {
 
   test('should handle null values in sum calculation', () => {
     const strategy = new SumStrategy();
-    const metricRender = new MetricRenderEngine(queryState, sumMetric, strategy, renderEngine);
+    const metricRender = new MetricRenderEngine(modelStore, sumMetric, strategy, renderEngine);
     const initialSum = directDB.sum('salary');
 
     // Add item with null salary
     const newItem = { id: 4, name: 'Dave', salary: null };
-    queryState.add({
+    modelStore.add({
         type: 'create',
         instances: [newItem]
     });
@@ -474,26 +474,26 @@ describe('MinStrategy', () => {
 
   test('should calculate min correctly', () => {
     const strategy = new MinStrategy();
-    const metricRender = new MetricRenderEngine(queryState, minMetric, strategy, renderEngine);
+    const metricRender = new MetricRenderEngine(modelStore, minMetric, strategy, renderEngine);
     expect(metricRender.render('salary')).toBe(directDB.min('salary'));
     metricRender.destroy();
   });
 
   test('should throw error if field is not provided', () => {
     const strategy = new MinStrategy();
-    const metricRender = new MetricRenderEngine(queryState, minMetric, strategy, renderEngine);
+    const metricRender = new MetricRenderEngine(modelStore, minMetric, strategy, renderEngine);
     expect(() => metricRender.render()).toThrow('MinStrategy requires a field parameter');
     metricRender.destroy();
   });
 
   test('should update min after create operation with lower value', () => {
     const strategy = new MinStrategy();
-    const metricRender = new MetricRenderEngine(queryState, minMetric, strategy, renderEngine);
+    const metricRender = new MetricRenderEngine(modelStore, minMetric, strategy, renderEngine);
     const currentMin = directDB.min('salary');
     const newLowerSalary = currentMin - 15000; // Ensure it's lower than current min
     
     // Create new item with lower salary
-    queryState.add({
+    modelStore.add({
       type: 'create',
       instances: [{ id: 4, name: 'Dave', salary: newLowerSalary }]
     });
@@ -507,12 +507,12 @@ describe('MinStrategy', () => {
 
   test('should not update min after create operation with higher value', () => {
     const strategy = new MinStrategy();
-    const metricRender = new MetricRenderEngine(queryState, minMetric, strategy, renderEngine);
+    const metricRender = new MetricRenderEngine(modelStore, minMetric, strategy, renderEngine);
     const initialMin = directDB.min('salary');
     const newHigherSalary = initialMin + 35000; // Ensure it's higher than current min
 
     // Create new item with higher salary
-    queryState.add({
+    modelStore.add({
       type: 'create',
       instances: [{ id: 4, name: 'Dave', salary: newHigherSalary }]
     });
@@ -526,7 +526,7 @@ describe('MinStrategy', () => {
 
   test('should NOT update optimistically after delete of min value item', () => {
     const strategy = new MinStrategy();
-    const metricRender = new MetricRenderEngine(queryState, minMetric, strategy, renderEngine);
+    const metricRender = new MetricRenderEngine(modelStore, minMetric, strategy, renderEngine);
     
     // Find the minimum salary item
     const minSalary = directDB.min('salary');
@@ -534,7 +534,7 @@ describe('MinStrategy', () => {
     const initialMin = minSalary;
 
     // Delete the min salary item
-    queryState.add({ type: 'delete', instances: [minSalaryItem.id] });
+    modelStore.add({ type: 'delete', instances: [minSalaryItem.id] });
     directDB.delete(minSalaryItem.id);
 
     // Optimistic render CANNOT know the next minimum, so it sticks with the ground truth
@@ -554,26 +554,26 @@ describe('MinStrategy', () => {
 
     test('should calculate max correctly', () => {
       const strategy = new MaxStrategy();
-      const metricRender = new MetricRenderEngine(queryState, maxMetric, strategy, renderEngine);
+      const metricRender = new MetricRenderEngine(modelStore, maxMetric, strategy, renderEngine);
       expect(metricRender.render('salary')).toBe(directDB.max('salary'));
       metricRender.destroy();
     });
 
     test('should throw error if field is not provided', () => {
       const strategy = new MaxStrategy();
-      const metricRender = new MetricRenderEngine(queryState, maxMetric, strategy, renderEngine);
+      const metricRender = new MetricRenderEngine(modelStore, maxMetric, strategy, renderEngine);
       expect(() => metricRender.render()).toThrow('MaxStrategy requires a field parameter');
       metricRender.destroy();
     });
 
     test('should update max after create operation with higher value', () => {
       const strategy = new MaxStrategy();
-      const metricRender = new MetricRenderEngine(queryState, maxMetric, strategy, renderEngine);
+      const metricRender = new MetricRenderEngine(modelStore, maxMetric, strategy, renderEngine);
       const currentMax = directDB.max('salary');
       const newHigherSalary = currentMax + 20000; // Ensure it's higher than current max
       
       // Create new item with higher salary
-      queryState.add({
+      modelStore.add({
         type: 'create',
         instances: [{ id: 4, name: 'Dave', salary: newHigherSalary }]
       });
@@ -587,12 +587,12 @@ describe('MinStrategy', () => {
 
     test('should not update max after create operation with lower value', () => {
       const strategy = new MaxStrategy();
-      const metricRender = new MetricRenderEngine(queryState, maxMetric, strategy, renderEngine);
+      const metricRender = new MetricRenderEngine(modelStore, maxMetric, strategy, renderEngine);
       const initialMax = directDB.max('salary');
       const newLowerSalary = initialMax - 40000; // Ensure it's lower than current max
 
       // Create new item with lower salary
-      queryState.add({
+      modelStore.add({
         type: 'create',
         instances: [{ id: 4, name: 'Dave', salary: newLowerSalary }]
       });
@@ -606,7 +606,7 @@ describe('MinStrategy', () => {
 
     test('should NOT update optimistically after delete of max value item', () => {
       const strategy = new MaxStrategy();
-      const metricRender = new MetricRenderEngine(queryState, maxMetric, strategy, renderEngine);
+      const metricRender = new MetricRenderEngine(modelStore, maxMetric, strategy, renderEngine);
       
       // Find the maximum salary item
       const maxSalary = directDB.max('salary');
@@ -614,7 +614,7 @@ describe('MinStrategy', () => {
       const initialMax = maxSalary;
 
       // Delete the max salary item
-      queryState.add({ type: 'delete', instances: [maxSalaryItem.id] });
+      modelStore.add({ type: 'delete', instances: [maxSalaryItem.id] });
       directDB.delete(maxSalaryItem.id);
 
       // Optimistic render CANNOT know the next maximum, sticks with ground truth
@@ -669,7 +669,7 @@ describe('MinStrategy', () => {
        // Use the countMetric from the outer scope for consistency
        specificCountMetric = countMetric; // Re-assign for clarity if needed or use outer countMetric directly
        strategy = new CountStrategy();
-       metricRender = new MetricRenderEngine(queryState, specificCountMetric, strategy, renderEngine);
+       metricRender = new MetricRenderEngine(modelStore, specificCountMetric, strategy, renderEngine);
      });
 
       afterEach(() => {
@@ -681,7 +681,7 @@ describe('MinStrategy', () => {
        expect(metricRender._cache.size).toBe(1);
        const cacheEntry = metricRender._cache.get('no_field');
        expect(cacheEntry).toBeDefined();
-       expect(cacheEntry.queryStateVersion).toBe(queryState.version);
+       expect(cacheEntry.modelStoreVersion).toBe(modelStore.version);
        expect(cacheEntry.metricValue).toBe(initialResult);
 
        const calculateSpy = vi.spyOn(strategy, 'calculate');
@@ -695,10 +695,10 @@ describe('MinStrategy', () => {
        const initialResult = metricRender.render();
        const calculateSpy = vi.spyOn(strategy, 'calculate');
 
-       queryState.add({
+       modelStore.add({
          type: 'create',
          instances: [{ id: 4, name: 'Dave' }]
-       }); // This bumps queryState.version
+       }); // This bumps modelStore.version
 
        const newResult = metricRender.render();
        expect(newResult).not.toBe(initialResult); // Value should change
@@ -710,13 +710,13 @@ describe('MinStrategy', () => {
      test('should cache field-specific calculations separately', () => {
         // Need a Sum Metric and RenderEngine for this test
         const localSumMetric = new Metric({
-             queryStateInstance: queryState,
+             modelStoreInstance: modelStore,
              fetchMetricValue: () => fetchSumMock('salary'), // Use outer mock
              initialValue: directDB.sum('salary'),
              name: 'CacheTestSumSalary'
          });
         const sumStrategy = new SumStrategy();
-        const sumMetricRender = new MetricRenderEngine(queryState, localSumMetric, sumStrategy, renderEngine);
+        const sumMetricRender = new MetricRenderEngine(modelStore, localSumMetric, sumStrategy, renderEngine);
 
         const salarySumResult = sumMetricRender.render('salary');
         const ratingSumResult = sumMetricRender.render('rating'); // Use another numeric field
@@ -743,37 +743,37 @@ describe('MinStrategy', () => {
 describe('MetricRenderEngine Edge Cases', () => {
   test('should handle empty datasets', async () => {
     // Create specific metrics and engines for this test
-    const localCountMetric = new Metric({ queryStateInstance: queryState, fetchMetricValue: async () => 0, initialValue: 0, name: 'EmptyCount'});
-    const localSumMetric = new Metric({ queryStateInstance: queryState, fetchMetricValue: async () => 0, initialValue: 0, name: 'EmptySum'});
-    const localMinMetric = new Metric({ queryStateInstance: queryState, fetchMetricValue: async () => null, initialValue: null, name: 'EmptyMin'});
-    const localMaxMetric = new Metric({ queryStateInstance: queryState, fetchMetricValue: async () => null, initialValue: null, name: 'EmptyMax'});
+    const localCountMetric = new Metric({ modelStoreInstance: modelStore, fetchMetricValue: async () => 0, initialValue: 0, name: 'EmptyCount'});
+    const localSumMetric = new Metric({ modelStoreInstance: modelStore, fetchMetricValue: async () => 0, initialValue: 0, name: 'EmptySum'});
+    const localMinMetric = new Metric({ modelStoreInstance: modelStore, fetchMetricValue: async () => null, initialValue: null, name: 'EmptyMin'});
+    const localMaxMetric = new Metric({ modelStoreInstance: modelStore, fetchMetricValue: async () => null, initialValue: null, name: 'EmptyMax'});
   
     const countStrategy = new CountStrategy();
     const sumStrategy = new SumStrategy();
     const minStrategy = new MinStrategy();
     const maxStrategy = new MaxStrategy();
   
-    const countMetricRender = new MetricRenderEngine(queryState, localCountMetric, countStrategy, renderEngine);
-    const sumMetricRender = new MetricRenderEngine(queryState, localSumMetric, sumStrategy, renderEngine);
-    const minMetricRender = new MetricRenderEngine(queryState, localMinMetric, minStrategy, renderEngine);
-    const maxMetricRender = new MetricRenderEngine(queryState, localMaxMetric, maxStrategy, renderEngine);
+    const countMetricRender = new MetricRenderEngine(modelStore, localCountMetric, countStrategy, renderEngine);
+    const sumMetricRender = new MetricRenderEngine(modelStore, localSumMetric, sumStrategy, renderEngine);
+    const minMetricRender = new MetricRenderEngine(modelStore, localMinMetric, minStrategy, renderEngine);
+    const maxMetricRender = new MetricRenderEngine(modelStore, localMaxMetric, maxStrategy, renderEngine);
   
     // Store original fetchGroundTruth
-    const originalFetchGroundTruth = queryState.fetchGroundTruth;
+    const originalFetchGroundTruth = modelStore.fetchGroundTruth;
     
     // Override fetchGroundTruth to return empty array
-    queryState.fetchGroundTruth = vi.fn().mockResolvedValue([]);
+    modelStore.fetchGroundTruth = vi.fn().mockResolvedValue([]);
     
     // Set up empty test DB
     const emptyDB = new SimpleDB([]);
     
     // Delete all items from ModelStore and directDB
     const allIds = initialData.map(item => item.id);
-    queryState.add({ type: 'delete', instances: allIds });
+    modelStore.add({ type: 'delete', instances: allIds });
     directDB.delete(allIds); // DB is now empty
   
     // Trigger an actual sync to update internal state
-    await queryState.sync();
+    await modelStore.sync();
     
     // Wait for sync to complete and metrics to update
     await vi.waitFor(() => {
@@ -788,7 +788,7 @@ describe('MetricRenderEngine Edge Cases', () => {
     expect(maxMetricRender.render('salary')).toBe(emptyDB.max('salary'));
   
     // Restore original fetchGroundTruth
-    queryState.fetchGroundTruth = originalFetchGroundTruth;
+    modelStore.fetchGroundTruth = originalFetchGroundTruth;
   
     // Cleanup
     countMetricRender.destroy(); localCountMetric.destroy();
@@ -803,9 +803,9 @@ describe('MetricRenderEngine Edge Cases', () => {
     const minStrategy = new MinStrategy();
     const maxStrategy = new MaxStrategy();
 
-    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, sumStrategy, renderEngine);
-    const minMetricRender = new MetricRenderEngine(queryState, minMetric, minStrategy, renderEngine);
-    const maxMetricRender = new MetricRenderEngine(queryState, maxMetric, maxStrategy, renderEngine);
+    const sumMetricRender = new MetricRenderEngine(modelStore, sumMetric, sumStrategy, renderEngine);
+    const minMetricRender = new MetricRenderEngine(modelStore, minMetric, minStrategy, renderEngine);
+    const maxMetricRender = new MetricRenderEngine(modelStore, maxMetric, maxStrategy, renderEngine);
 
     // Store initial DB values for comparison
     const initialSum = directDB.sum('salary');
@@ -813,7 +813,7 @@ describe('MetricRenderEngine Edge Cases', () => {
     const initialMax = directDB.max('salary');
 
     // Add item with string value for salary
-    queryState.add({
+    modelStore.add({
       type: 'create',
       instances: [{ id: 4, name: 'Dave', salary: 'Not a number' }]
     });
@@ -839,9 +839,9 @@ describe('MetricRenderEngine Edge Cases', () => {
     const minStrategy = new MinStrategy();
     const maxStrategy = new MaxStrategy();
 
-    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, sumStrategy, renderEngine);
-    const minMetricRender = new MetricRenderEngine(queryState, minMetric, minStrategy, renderEngine);
-    const maxMetricRender = new MetricRenderEngine(queryState, maxMetric, maxStrategy, renderEngine);
+    const sumMetricRender = new MetricRenderEngine(modelStore, sumMetric, sumStrategy, renderEngine);
+    const minMetricRender = new MetricRenderEngine(modelStore, minMetric, minStrategy, renderEngine);
+    const maxMetricRender = new MetricRenderEngine(modelStore, maxMetric, maxStrategy, renderEngine);
 
     // Sum of non-existent field
     expect(sumMetricRender.render('nonexistentField')).toBe(directDB.sum('nonexistentField') + sumMetric.getValue());
@@ -866,10 +866,10 @@ describe('MetricRenderEngine Edge Cases', () => {
     const minStrategy = new MinStrategy();
     const maxStrategy = new MaxStrategy();
 
-    const countMetricRender = new MetricRenderEngine(queryState, countMetric, countStrategy, renderEngine);
-    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, sumStrategy, renderEngine);
-    const minMetricRender = new MetricRenderEngine(queryState, minMetric, minStrategy, renderEngine);
-    const maxMetricRender = new MetricRenderEngine(queryState, maxMetric, maxStrategy, renderEngine);
+    const countMetricRender = new MetricRenderEngine(modelStore, countMetric, countStrategy, renderEngine);
+    const sumMetricRender = new MetricRenderEngine(modelStore, sumMetric, sumStrategy, renderEngine);
+    const minMetricRender = new MetricRenderEngine(modelStore, minMetric, minStrategy, renderEngine);
+    const maxMetricRender = new MetricRenderEngine(modelStore, maxMetric, maxStrategy, renderEngine);
 
     // Set up test DB that we'll keep in sync with operations
     const testDB = new SimpleDB(initialData);
@@ -882,7 +882,7 @@ describe('MetricRenderEngine Edge Cases', () => {
 
     // 1. Create a new item
     const newItem = { id: 4, name: 'Dave', role: 'user', salary: 70000 };
-    queryState.add({
+    modelStore.add({
       type: 'create',
       instances: [newItem]
     });
@@ -895,7 +895,7 @@ describe('MetricRenderEngine Edge Cases', () => {
 
     // 2. Update an existing item
     const aliceUpdate = { id: 1, salary: 110000 };
-    queryState.add({ type: 'update', instances: [aliceUpdate] });
+    modelStore.add({ type: 'update', instances: [aliceUpdate] });
     testDB.update(aliceUpdate);
     
     expect(countMetricRender.render()).toBe(testDB.count());
@@ -904,7 +904,7 @@ describe('MetricRenderEngine Edge Cases', () => {
     expect(maxMetricRender.render('salary')).toBe(testDB.max('salary'));
 
     // 3. Delete an item (Bob, id 2)
-    queryState.add({ type: 'delete', instances: [2] });
+    modelStore.add({ type: 'delete', instances: [2] });
     testDB.delete(2);
     
     expect(countMetricRender.render()).toBe(testDB.count());
@@ -914,7 +914,7 @@ describe('MetricRenderEngine Edge Cases', () => {
 
     // 4. Create another item
     const newItem2 = { id: 5, name: 'Eve', role: 'manager', salary: 95000 };
-    queryState.add({
+    modelStore.add({
       type: 'create',
       instances: [newItem2]
     });
@@ -935,15 +935,15 @@ describe('MetricRenderEngine Edge Cases', () => {
     // Use main count/sum metrics
     const countStrategy = new CountStrategy();
     const sumStrategy = new SumStrategy();
-    const countMetricRender = new MetricRenderEngine(queryState, countMetric, countStrategy, renderEngine);
-    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, sumStrategy, renderEngine);
+    const countMetricRender = new MetricRenderEngine(modelStore, countMetric, countStrategy, renderEngine);
+    const sumMetricRender = new MetricRenderEngine(modelStore, sumMetric, sumStrategy, renderEngine);
 
     // Set up test DB that we'll keep in sync with operations
     const testDB = new SimpleDB(initialData);
 
     // Create operation
     const newItem = { id: 4, name: 'Dave', salary: 70000 };
-    const createOpId = queryState.add({
+    const createOpId = modelStore.add({
       type: 'create',
       instances: [newItem]
     });
@@ -953,14 +953,14 @@ describe('MetricRenderEngine Edge Cases', () => {
     expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
 
     // Confirm the operation (state shouldn't change optimistically)
-    queryState.confirm(createOpId);
+    modelStore.confirm(createOpId);
 
     expect(countMetricRender.render()).toBe(testDB.count());
     expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
 
     // Create another operation
     const newItem2 = { id: 5, name: 'Eve', salary: 95000 };
-    const createOpId2 = queryState.add({
+    const createOpId2 = modelStore.add({
       type: 'create',
       instances: [newItem2]
     });
@@ -970,7 +970,7 @@ describe('MetricRenderEngine Edge Cases', () => {
     expect(sumMetricRender.render('salary')).toBe(testDB.sum('salary'));
 
     // Reject the second operation - remove from testDB
-    queryState.reject(createOpId2);
+    modelStore.reject(createOpId2);
     testDB.delete(newItem2.id);
 
     // Values should revert to state after first confirmation
@@ -989,15 +989,15 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
   test('should synchronize metrics during ModelStore sync', async () => {
     const countStrategy = new CountStrategy();
     const sumStrategy = new SumStrategy();
-    const countMetricRender = new MetricRenderEngine(queryState, countMetric, countStrategy, renderEngine);
-    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, sumStrategy, renderEngine);
+    const countMetricRender = new MetricRenderEngine(modelStore, countMetric, countStrategy, renderEngine);
+    const sumMetricRender = new MetricRenderEngine(modelStore, sumMetric, sumStrategy, renderEngine);
 
     // Set up test DB to track operations
     const testDB = new SimpleDB(initialData);
 
     // Add operation
     const newItem = { id: 4, name: 'Dave', salary: 70000 };
-    queryState.add({
+    modelStore.add({
       type: 'create',
       instances: [newItem]
     });
@@ -1015,13 +1015,13 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
     fetchCountMock.mockResolvedValue(newDb.count());
     fetchSumMock.mockResolvedValue(newDb.sum('salary'));
     // Mock the main ground truth fetch as well
-    queryState.fetchGroundTruth = vi.fn().mockResolvedValue(updatedData);
+    modelStore.fetchGroundTruth = vi.fn().mockResolvedValue(updatedData);
 
     // Sync ModelStore - this triggers Metric.sync internally via subscription
-    await queryState.sync();
+    await modelStore.sync();
 
     // Check if mocks were called
-    expect(queryState.fetchGroundTruth).toHaveBeenCalled();
+    expect(modelStore.fetchGroundTruth).toHaveBeenCalled();
     // Metric sync happens async via subscription, check mocks were eventually called
     await vi.waitFor(() => {
       expect(fetchCountMock).toHaveBeenCalled();
@@ -1043,10 +1043,10 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
 
   test('should handle all metrics in complex operation sequence', async () => {
     // Create render engines using outer scope metrics
-    const countMetricRender = new MetricRenderEngine(queryState, countMetric, new CountStrategy(), renderEngine);
-    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, new SumStrategy(), renderEngine);
-    const minMetricRender = new MetricRenderEngine(queryState, minMetric, new MinStrategy(), renderEngine);
-    const maxMetricRender = new MetricRenderEngine(queryState, maxMetric, new MaxStrategy(), renderEngine);
+    const countMetricRender = new MetricRenderEngine(modelStore, countMetric, new CountStrategy(), renderEngine);
+    const sumMetricRender = new MetricRenderEngine(modelStore, sumMetric, new SumStrategy(), renderEngine);
+    const minMetricRender = new MetricRenderEngine(modelStore, minMetric, new MinStrategy(), renderEngine);
+    const maxMetricRender = new MetricRenderEngine(modelStore, maxMetric, new MaxStrategy(), renderEngine);
 
     // Initial ground truth values from directDB
     const initialCountGT = directDB.count();
@@ -1060,7 +1060,7 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
     // Series of operations
     // 1. Create low salary
     const lowSalaryItem = { id: 4, name: 'Dave', salary: 50000 };
-    queryState.add({ type: 'create', instances: [lowSalaryItem] });
+    modelStore.add({ type: 'create', instances: [lowSalaryItem] });
     testDB.create(lowSalaryItem);
     directDB.create(lowSalaryItem);
 
@@ -1072,7 +1072,7 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
 
     // 2. Create high salary
     const highSalaryItem = { id: 5, name: 'Eve', salary: 120000 };
-    queryState.add({ type: 'create', instances: [highSalaryItem] });
+    modelStore.add({ type: 'create', instances: [highSalaryItem] });
     testDB.create(highSalaryItem);
     directDB.create(highSalaryItem);
 
@@ -1084,7 +1084,7 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
 
     // 3. Update item
     const aliceUpdate = { id: 1, salary: 105000 };
-    queryState.add({ type: 'update', instances: [aliceUpdate] });
+    modelStore.add({ type: 'update', instances: [aliceUpdate] });
     testDB.update(aliceUpdate);
     directDB.update(aliceUpdate);
 
@@ -1095,7 +1095,7 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
     expect(maxMetricRender.render('salary')).toBe(testDB.max('salary'));
 
     // 4. Delete item (Charlie, id 3)
-    queryState.add({ type: 'delete', instances: [3] });
+    modelStore.add({ type: 'delete', instances: [3] });
     testDB.delete(3);
     directDB.delete(3);
 
@@ -1118,10 +1118,10 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
   });
 
   test('should handle rejected operations in all metrics', () => {
-    const countMetricRender = new MetricRenderEngine(queryState, countMetric, new CountStrategy(), renderEngine);
-    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, new SumStrategy(), renderEngine);
-    const minMetricRender = new MetricRenderEngine(queryState, minMetric, new MinStrategy(), renderEngine);
-    const maxMetricRender = new MetricRenderEngine(queryState, maxMetric, new MaxStrategy(), renderEngine);
+    const countMetricRender = new MetricRenderEngine(modelStore, countMetric, new CountStrategy(), renderEngine);
+    const sumMetricRender = new MetricRenderEngine(modelStore, sumMetric, new SumStrategy(), renderEngine);
+    const minMetricRender = new MetricRenderEngine(modelStore, minMetric, new MinStrategy(), renderEngine);
+    const maxMetricRender = new MetricRenderEngine(modelStore, maxMetric, new MaxStrategy(), renderEngine);
 
     // Set up test DB to track operations
     const testDB = new SimpleDB(initialData);
@@ -1136,8 +1136,8 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
     const newMinItem = { id: 4, name: 'Dave', salary: 50000 };
     const newMaxItem = { id: 5, name: 'Eve', salary: 120000 };
     
-    const opId1 = queryState.add({ type: 'create', instances: [newMinItem] });
-    const opId2 = queryState.add({ type: 'create', instances: [newMaxItem] });
+    const opId1 = modelStore.add({ type: 'create', instances: [newMinItem] });
+    const opId2 = modelStore.add({ type: 'create', instances: [newMaxItem] });
     
     // Update test DB (temporarily)
     testDB.create(newMinItem);
@@ -1150,8 +1150,8 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
     expect(maxMetricRender.render('salary')).toBe(testDB.max('salary'));
 
     // Reject both operations and revert test DB
-    queryState.reject(opId1);
-    queryState.reject(opId2);
+    modelStore.reject(opId1);
+    modelStore.reject(opId2);
     testDB.delete(newMinItem.id);
     testDB.delete(newMaxItem.id);
 
@@ -1175,13 +1175,13 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
 
   test('should incorporate ground truth changes from sync', async () => {
     // Create a simple sum metric renderer
-    const sumMetricRender = new MetricRenderEngine(queryState, sumMetric, new SumStrategy(), renderEngine);
+    const sumMetricRender = new MetricRenderEngine(modelStore, sumMetric, new SumStrategy(), renderEngine);
     
     // Start with clean state 
-    queryState.operations.clear();
+    modelStore.operations.clear();
     
     // Get a reference to initial ground truth data
-    const initialData = queryState.getGroundTruth();
+    const initialData = modelStore.getGroundTruth();
     let testDB = new SimpleDB(initialData);
     
     // Reset metric value to match test DB
@@ -1192,7 +1192,7 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
     
     // Add optimistic update
     const salaryUpdate = { id: 1, salary: 65000 };
-    queryState.add({
+    modelStore.add({
       type: 'update',
       instances: [salaryUpdate]
     });
@@ -1212,11 +1212,11 @@ describe('MetricRenderEngine Integration with ModelStore', () => {
     const serverDB = new SimpleDB(serverData);
     
     // Mock server responses
-    queryState.fetchGroundTruth = vi.fn().mockResolvedValue(serverData);
+    modelStore.fetchGroundTruth = vi.fn().mockResolvedValue(serverData);
     fetchSumMock.mockResolvedValue(serverDB.sum('salary'));
     
-    // Sync queryState with server
-    await queryState.sync();
+    // Sync modelStore with server
+    await modelStore.sync();
     
     // Verify metric ground truth updated
     await vi.waitFor(() => {

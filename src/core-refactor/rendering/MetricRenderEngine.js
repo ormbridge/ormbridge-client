@@ -1,9 +1,9 @@
 export class MetricRenderEngine {
-  constructor(queryState, metric, strategy, renderEngine) {
-    if (!queryState || !metric || !strategy || !renderEngine) {
-       throw new Error("MetricRenderEngine requires queryState, metric, strategy, and renderEngine");
+  constructor(modelStore, metric, strategy, renderEngine) {
+    if (!modelStore || !metric || !strategy || !renderEngine) {
+       throw new Error("MetricRenderEngine requires modelStore, metric, strategy, and renderEngine");
     }
-    this.queryState = queryState;
+    this.modelStore = modelStore;
     this.metric = metric;
     this.strategy = strategy;
     this.renderEngine = renderEngine;
@@ -12,7 +12,7 @@ export class MetricRenderEngine {
     // FilterFn removed for now based on feedback
     // this._filterFn = this.strategy.filterFn || (() => true);
 
-    this._unsubscribeFromQueryState = this.queryState.subscribe(() => {
+    this._unsubscribeFromQueryState = this.modelStore.subscribe(() => {
        if (this._cache) this._cache.clear(); // Check if cache exists before clearing
     });
   }
@@ -26,7 +26,7 @@ export class MetricRenderEngine {
       }
   
       const groundTruthMetricValue = this.metric.getValue();
-      const groundTruthDataSlice = this.queryState.getGroundTruth() || [];
+      const groundTruthDataSlice = this.modelStore.getGroundTruth() || [];
       const optimisticDataSlice = this.renderEngine.render({
         offset: 0,
         limit: null
@@ -51,13 +51,13 @@ export class MetricRenderEngine {
          return false;
       }
       const cacheEntry = this._cache.get(cacheKey);
-      return cacheEntry.queryStateVersion === this.queryState.version;
+      return cacheEntry.modelStoreVersion === this.modelStore.version;
    }
 
    _updateCache(cacheKey, value) {
       if (!this._cache) return; // Add null check
       this._cache.set(cacheKey, {
-         queryStateVersion: this.queryState.version,
+         modelStoreVersion: this.modelStore.version,
          metricValue: value
       });
    }
@@ -71,7 +71,7 @@ export class MetricRenderEngine {
          this._cache.clear();
          this._cache = null;
       }
-      this.queryState = null;
+      this.modelStore = null;
       this.metric = null;
       this.strategy = null;
       this.renderEngine = null;

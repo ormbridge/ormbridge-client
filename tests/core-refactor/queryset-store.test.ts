@@ -4,6 +4,7 @@
 import { describe, test, expect, beforeEach, vi, afterEach } from 'vitest';
 import { QuerySetStore } from '../../src/core-refactor/state/QuerySetStore.js';
 import { QuerySetRenderEngine } from '../../src/core-refactor/rendering/QuerySetRenderEngine.js';
+import { LiveQuerySet } from '../../src/core-refactor/live/LiveQuerySet.js';
 
 // Simple in-memory database for comparison
 class SimpleDB {
@@ -81,18 +82,18 @@ describe('QuerySetStore', () => {
     fetchIdsMock = vi.fn().mockResolvedValue([...initialIds]);
 
     // Set up QuerySetStore
-    querySetStore = new QuerySetStore({
+    querySetStore = new LiveQuerySet({
       queryName: 'test_query',
       fetchQuerySet: fetchIdsMock,
       syncInterval: 0 // Disable automatic sync
     });
 
     // Initialize ground truth IDs for QuerySetStore
-    querySetStore._setGroundTruthIds([...initialIds]);
+    querySetStore._querySetStore._setGroundTruthIds([...initialIds]);
   });
 
   test('should initialize with correct ground truth IDs', () => {
-    expect(querySetStore.getGroundTruthIds()).toEqual(initialIds);
+    expect(querySetStore._querySetStore.getGroundTruthIds()).toEqual(initialIds);
   });
 
   test('should add create operation correctly', () => {
@@ -218,7 +219,7 @@ describe('QuerySetStore', () => {
     const newIds = [1, 2, 4]; // Changed IDs: removed 3, added 4
     fetchIdsMock.mockResolvedValueOnce(newIds);
     
-    const result = await querySetStore.sync();
+    const result = await querySetStore._querySetStore.sync();
     
     expect(result).toBe(true);
     expect(querySetStore.getGroundTruthIds()).toEqual(newIds);
@@ -273,7 +274,6 @@ describe('QuerySetStore', () => {
 
 describe('QuerySetRenderEngine', () => {
   let querySetStore;
-  let renderEngine;
   let fetchIdsMock;
 
   beforeEach(() => {
@@ -281,21 +281,19 @@ describe('QuerySetRenderEngine', () => {
     fetchIdsMock = vi.fn().mockResolvedValue([...initialIds]);
 
     // Set up QuerySetStore
-    querySetStore = new QuerySetStore({
+    querySetStore = new LiveQuerySet({
       queryName: 'test_query',
       fetchQuerySet: fetchIdsMock,
       syncInterval: 0 // Disable automatic sync
     });
 
     // Initialize ground truth IDs for QuerySetStore
-    querySetStore._setGroundTruthIds([...initialIds]);
+    querySetStore._querySetStore._setGroundTruthIds([...initialIds]);
 
-    // Create RenderEngine
-    renderEngine = new QuerySetRenderEngine(querySetStore);
   });
 
   test('should render initial IDs correctly', () => {
-    const renderedIds = renderEngine.render({ offset: 0, limit: 10 });
+    const renderedIds = querySetStore.render({ offset: 0, limit: 10 });
     
     expect(renderedIds.length).toBe(3);
     expect(renderedIds).toEqual(initialIds);
@@ -309,7 +307,7 @@ describe('QuerySetRenderEngine', () => {
     });
     
     // Render
-    const renderedIds = renderEngine.render({ offset: 0, limit: 10 });
+    const renderedIds = querySetStore.render({ offset: 0, limit: 10 });
     
     // Check the result includes the new ID
     expect(renderedIds.length).toBe(4);
@@ -324,7 +322,7 @@ describe('QuerySetRenderEngine', () => {
     });
     
     // Render
-    const renderedIds = renderEngine.render({ offset: 0, limit: 10 });
+    const renderedIds = querySetStore.render({ offset: 0, limit: 10 });
     
     // Check the result excludes the deleted ID
     expect(renderedIds.length).toBe(2);
@@ -339,17 +337,17 @@ describe('QuerySetRenderEngine', () => {
     });
     
     // Test different pagination parameters
-    const page1 = renderEngine.render({ offset: 0, limit: 2 });
+    const page1 = querySetStore.render({ offset: 0, limit: 2 });
     expect(page1.length).toBe(2);
     
-    const page2 = renderEngine.render({ offset: 2, limit: 2 });
+    const page2 = querySetStore.render({ offset: 2, limit: 2 });
     expect(page2.length).toBe(2);
     
-    const page3 = renderEngine.render({ offset: 4, limit: 2 });
+    const page3 = querySetStore.render({ offset: 4, limit: 2 });
     expect(page3.length).toBe(1);
     
     // Check that all 5 IDs are returned with sufficient limit
-    const allIds = renderEngine.render({ offset: 0, limit: 10 });
+    const allIds = querySetStore.render({ offset: 0, limit: 10 });
     expect(allIds.length).toBe(5);
   });
 
@@ -364,7 +362,7 @@ describe('QuerySetRenderEngine', () => {
     const sortDesc = (a, b) => b - a;
     
     // Render with sorting
-    const renderedIds = renderEngine.render({ 
+    const renderedIds = querySetStore.render({ 
       offset: 0, 
       limit: 10,
       sortFn: sortDesc
@@ -376,14 +374,14 @@ describe('QuerySetRenderEngine', () => {
 
   test('should cache rendered data correctly', () => {
     // Spy on _processOperations to check cache behavior
-    const spy = vi.spyOn(renderEngine, '_processOperations');
+    const spy = vi.spyOn(querySetStore._querySetRenderEngine, '_processOperations');
     
     // First render (cache miss)
-    renderEngine.render({ offset: 0, limit: 10 });
+    querySetStore.render({ offset: 0, limit: 10 });
     expect(spy).toHaveBeenCalledTimes(1);
     
     // Second render with same parameters (cache hit)
-    renderEngine.render({ offset: 0, limit: 10 });
+    querySetStore.render({ offset: 0, limit: 10 });
     expect(spy).toHaveBeenCalledTimes(1); // Still just once
     
     // Add an operation to invalidate cache
@@ -393,7 +391,7 @@ describe('QuerySetRenderEngine', () => {
     });
     
     // Next render should be a cache miss
-    renderEngine.render({ offset: 0, limit: 10 });
+    querySetStore.render({ offset: 0, limit: 10 });
     expect(spy).toHaveBeenCalledTimes(2);
     
     // Clean up
@@ -408,14 +406,14 @@ describe('QuerySetRenderEngine', () => {
     });
     
     // Verify it appears in the render
-    let renderedIds = renderEngine.render({ offset: 0, limit: 10 });
+    let renderedIds = querySetStore.render({ offset: 0, limit: 10 });
     expect(renderedIds).toContain(4);
     
     // Reject the operation
     querySetStore.reject(opId);
     
     // Verify it no longer appears in the render
-    renderedIds = renderEngine.render({ offset: 0, limit: 10 });
+    renderedIds = querySetStore.render({ offset: 0, limit: 10 });
     expect(renderedIds).not.toContain(4);
   });
 
@@ -437,7 +435,7 @@ describe('QuerySetRenderEngine', () => {
     });
     
     // Render IDs
-    const renderedIds = renderEngine.render({ offset: 0, limit: 10 });
+    const renderedIds = querySetStore.render({ offset: 0, limit: 10 });
     
     // Should have IDs 1, 3, 4, 5 (after removing 2)
     expect(renderedIds).toEqual(expect.arrayContaining([1, 3, 4, 5]));
@@ -446,15 +444,15 @@ describe('QuerySetRenderEngine', () => {
 
   test('should subscribe to querySetStore changes', () => {
     // Set up spies
-    const processSpy = vi.spyOn(renderEngine, '_processOperations');
+    const processSpy = vi.spyOn(querySetStore._querySetRenderEngine, '_processOperations');
     
     // First render to initialize cache
-    renderEngine.render({ offset: 0, limit: 10 });
+    querySetStore.render({ offset: 0, limit: 10 });
     expect(processSpy).toHaveBeenCalledTimes(1);
     processSpy.mockClear();
     
     // Subscribe to changes
-    const unsubscribe = renderEngine.subscribeToChanges();
+    const unsubscribe = querySetStore.subscribe();
     
     // Trigger querySetStore change
     querySetStore.add({
@@ -463,7 +461,7 @@ describe('QuerySetRenderEngine', () => {
     });
     
     // Check cache is invalidated (indirectly, by checking render causes _processOperations call)
-    renderEngine.render({ offset: 0, limit: 10 });
+    querySetStore.render({ offset: 0, limit: 10 });
     expect(processSpy).toHaveBeenCalledTimes(1);
     processSpy.mockClear();
     
@@ -477,10 +475,10 @@ describe('QuerySetRenderEngine', () => {
     });
     
     // Manually set the cache version to match current version to simulate cached state
-    renderEngine._cache.queryStateVersion = querySetStore.version;
+    querySetStore._querySetRenderEngine._cache.queryStateVersion = querySetStore.version;
     
     // Now render should use the cached value
-    renderEngine.render({ offset: 0, limit: 10 });
+    querySetStore.render({ offset: 0, limit: 10 });
     expect(processSpy).not.toHaveBeenCalled();
     
     // Clean up
@@ -488,7 +486,7 @@ describe('QuerySetRenderEngine', () => {
   });
 
   test('should get correct count', () => {
-    expect(renderEngine.getCount()).toBe(3);
+    expect(querySetStore.getCount()).toBe(3);
     
     // Add an ID
     querySetStore.add({
@@ -496,7 +494,7 @@ describe('QuerySetRenderEngine', () => {
       ids: [4]
     });
     
-    expect(renderEngine.getCount()).toBe(4);
+    expect(querySetStore.getCount()).toBe(4);
     
     // Delete an ID
     querySetStore.add({
@@ -504,7 +502,7 @@ describe('QuerySetRenderEngine', () => {
       ids: [1]
     });
     
-    expect(renderEngine.getCount()).toBe(3);
+    expect(querySetStore.getCount()).toBe(3);
   });
 
   test('should handle sync that changes ground truth', async () => {
@@ -513,10 +511,10 @@ describe('QuerySetRenderEngine', () => {
     fetchIdsMock.mockResolvedValueOnce(newIds);
     
     // Sync QuerySetStore
-    await querySetStore.sync();
+    await querySetStore._querySetStore.sync();
     
     // Check the rendered result
-    const renderedIds = renderEngine.render({ offset: 0, limit: 10 });
+    const renderedIds = querySetStore.render({ offset: 0, limit: 10 });
     
     // Should have IDs 2, 3, 4 only
     expect(renderedIds).toEqual(expect.arrayContaining([2, 3, 4]));

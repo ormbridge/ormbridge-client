@@ -1,28 +1,28 @@
 /**
  * Represents a single metric's ground truth value that stays in sync
- * with a QueryState's refresh cycle.
+ * with a ModelStore's refresh cycle.
  *
  * It does NOT calculate optimistic values or notify subscribers directly.
- * Consumers should subscribe to the associated QueryState and pull this
+ * Consumers should subscribe to the associated ModelStore and pull this
  * metric's value when needed for optimistic calculations.
  */
 export class Metric {
     /**
      * @param {object} options
-     * @param {QueryState} options.queryStateInstance - The QueryState instance to monitor for sync triggers.
+     * @param {ModelStore} options.modelStoreInstance - The ModelStore instance to monitor for sync triggers.
      * @param {Function} options.fetchMetricValue - Async function () => Promise<any> to get the ground truth value for THIS metric.
      * @param {any} [options.initialValue=null] - Optional initial value for the metric's ground truth.
      * @param {string} [options.name='UnnamedMetric'] - Optional name for logging/debugging.
      */
     constructor(options) {
-        if (!options || !options.queryStateInstance || !options.fetchMetricValue) {
-            throw new Error("Metric requires options: queryStateInstance, fetchMetricValue");
+        if (!options || !options.modelStoreInstance || !options.fetchMetricValue) {
+            throw new Error("Metric requires options: modelStoreInstance, fetchMetricValue");
         }
-        if (typeof options.queryStateInstance.subscribe !== 'function') {
-             throw new Error("Provided queryStateInstance must have a 'subscribe' method.");
+        if (typeof options.modelStoreInstance.subscribe !== 'function') {
+             throw new Error("Provided modelStoreInstance must have a 'subscribe' method.");
         }
 
-        this.queryState = options.queryStateInstance;
+        this.modelStore = options.modelStoreInstance;
         this.fetchMetricValue = options.fetchMetricValue;
         this.metricName = options.name || 'UnnamedMetric';
 
@@ -32,18 +32,18 @@ export class Metric {
         this.isSyncing = false;
         this.lastSyncError = null;
 
-        // Store the unsubscribe function from QueryState
-        this.queryStateUnsubscriber = null;
+        // Store the unsubscribe function from ModelStore
+        this.modelStoreUnsubscriber = null;
 
-        this._subscribeToQueryState();
+        this._subscribeToModelStore();
     }
 
-    _subscribeToQueryState() {
+    _subscribeToModelStore() {
         // Only subscribe to sync_started to trigger our own fetch
-        this.queryStateUnsubscriber = this.queryState.subscribe(
+        this.modelStoreUnsubscriber = this.modelStore.subscribe(
             (eventType) => {
                 if (eventType === 'sync_started') {
-                    // Don't await, let it run concurrently with QueryState sync
+                    // Don't await, let it run concurrently with ModelStore sync
                     this.sync();
                 }
             },
@@ -53,7 +53,7 @@ export class Metric {
 
     /**
      * Fetches the ground truth value for this specific metric.
-     * Triggered by QueryState's sync cycle. Updates internal value.
+     * Triggered by ModelStore's sync cycle. Updates internal value.
      */
     async sync() {
         if (this.isSyncing) return;
@@ -78,7 +78,7 @@ export class Metric {
 
     /**
      * Returns the current ground truth value of the metric.
-     * Consumers call this when QueryState indicates a change.
+     * Consumers call this when ModelStore indicates a change.
      * @returns {any}
      */
     getValue() {
@@ -86,13 +86,13 @@ export class Metric {
     }
 
     /**
-     * Cleans up subscription to QueryState.
+     * Cleans up subscription to ModelStore.
      */
     destroy() {
-        // Unsubscribe from QueryState
-        if (this.queryStateUnsubscriber) {
-            this.queryStateUnsubscriber();
-            this.queryStateUnsubscriber = null;
+        // Unsubscribe from ModelStore
+        if (this.modelStoreUnsubscriber) {
+            this.modelStoreUnsubscriber();
+            this.modelStoreUnsubscriber = null;
         }
     }
 }
