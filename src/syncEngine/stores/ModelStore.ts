@@ -1,35 +1,7 @@
 import { v7 as uuidv7 } from "uuid";
 import { IndexedDBStorage } from '../persistence/IndexedDBStorage'
 import { getStoreKey } from './utils'
-
-export type OperationType = 'create' | 'update' | 'delete' | 'update_or_create' | 'get_or_create';
-export type OperationStatus = 'inflight' | 'confirmed' | 'rejected';
-
-export interface OperationData<T extends Record<string, any>> {
-    operationId?: string;
-    type: OperationType;
-    status?: OperationStatus;
-    instances: T | T[];
-    timestamp?: number;
-}
-
-export class Operation<T extends Record<string, any>> {
-    public operationId: string;
-    public type: OperationType;
-    public status: OperationStatus;
-    public instances: T[];
-    public timestamp: number;
-
-    constructor(data: OperationData<T>) {
-        this.operationId = data.operationId || `op_${uuidv7()}`;
-        this.type = data.type;
-        this.status = data.status || 'inflight';
-        const instancesRaw = Array.isArray(data.instances) ? data.instances : [data.instances];
-        this.instances = instancesRaw;
-        this.timestamp = data.timestamp || Date.now();
-    }
-}
-
+import { OperationType, OperationStatus, OperationData, Operation } from './operation'
 
 export interface ModelClass<T extends Record<string, any>> {
     primaryKeyField: keyof T;
@@ -83,6 +55,20 @@ export class ModelStore<T extends Record<string, any>> {
         return this.groundTruthArray.map(instance => instance[this.pkField]);
     }
 
+    private _persistOperations(): void {
+        this._storage
+            .save({ id: this._operationsKey, data: this.operations })
+            .catch(error => console.error("Failed to persist operations:", error));
+    }
+
+    private _persistGroundTruth(): void {
+         this._storage
+            .save({ id: this._groundTruthKey, data: this.groundTruthArray })
+            .catch(error => console.error("Failed to persist ground truth:", error));
+    }
+
+    // used for optimistic behaviour
+
     addOperation(operation: Operation<T>): void {
         this.operations.push(operation);
         this._persistOperations();
@@ -97,18 +83,6 @@ export class ModelStore<T extends Record<string, any>> {
             return true;
         }
         return false;
-    }
-
-    private _persistOperations(): void {
-        this._storage
-            .save({ id: this._operationsKey, data: this.operations })
-            .catch(error => console.error("Failed to persist operations:", error));
-    }
-
-    private _persistGroundTruth(): void {
-         this._storage
-            .save({ id: this._groundTruthKey, data: this.groundTruthArray })
-            .catch(error => console.error("Failed to persist ground truth:", error));
     }
 
     confirm(operationId: string, instances: T[]): void {
@@ -136,11 +110,12 @@ export class ModelStore<T extends Record<string, any>> {
         }
     }
 
-
     setOperations(operations: Operation<T>[]): void {
         this.operations = operations;
         this._persistOperations();
     }
+
+    // used for caching data returned by the backend
 
     setGroundTruth(groundTruth: T[]): void {
         this.groundTruthArray = groundTruth;
@@ -172,17 +147,33 @@ export class ModelStore<T extends Record<string, any>> {
         this._persistGroundTruth();
     }
 
-
-    render(pks: Set<any> | null = null): T[] {
-        const filteredGroundTruthMap = this.filteredGroundTruth(pks, this.groundTruthArray);
-        const filteredOperationsMap = this.filteredOperations(pks, this.operations);
-        for (const op of filteredOperationsMap.values()) {
-            if (op.status !== 'rejected') {
-                this.applyOperation(op, filteredGroundTruthMap);
-            }
+    async sync(): Promise<void> {
+        if (this.isSyncing) {
+            console.warn('Already syncing, sync request ignored.');
+            return;
         }
-        return Array.from(filteredGroundTruthMap.values());
+        this.isSyncing = true;
+
+        try {
+            const currentPks = this.groundTruthPks;
+            const newGroundTruth = await this.fetchFn({ pks: currentPks, modelClass: this.modelClass });
+
+            this.setGroundTruth(newGroundTruth);
+
+            const trimmedOps = this.getTrimmedOperations();
+            this.setOperations(trimmedOps);
+
+            console.log(`Sync completed for ${this.modelClass.modelName}.`);
+
+        } catch (error: any) {
+            console.error(`Failed to sync ground truth for ${this.modelClass.modelName}:`, error);
+        } finally {
+             this.isSyncing = false;
+        }
     }
+
+
+    // Rendering
 
     private filteredOperations(pks: Set<any> | null, operations: Operation<T>[]): Operation<T>[] {
         if (!pks) return operations;
@@ -258,34 +249,19 @@ export class ModelStore<T extends Record<string, any>> {
         return groundTruth;
     }
 
-
     getTrimmedOperations(): Operation<T>[] {
         const twoMinutesAgo = Date.now() - 1000 * 60 * 2;
         return this.operations.filter(operation => operation.timestamp > twoMinutesAgo);
     }
 
-    async sync(): Promise<void> {
-        if (this.isSyncing) {
-            console.warn('Already syncing, sync request ignored.');
-            return;
+    render(pks: Set<any> | null = null): T[] {
+        const filteredGroundTruthMap = this.filteredGroundTruth(pks, this.groundTruthArray);
+        const filteredOperationsMap = this.filteredOperations(pks, this.operations);
+        for (const op of filteredOperationsMap.values()) {
+            if (op.status !== 'rejected') {
+                this.applyOperation(op, filteredGroundTruthMap);
+            }
         }
-        this.isSyncing = true;
-
-        try {
-            const currentPks = this.groundTruthPks;
-            const newGroundTruth = await this.fetchFn({ pks: currentPks, modelClass: this.modelClass });
-
-            this.setGroundTruth(newGroundTruth);
-
-            const trimmedOps = this.getTrimmedOperations();
-            this.setOperations(trimmedOps);
-
-            console.log(`Sync completed for ${this.modelClass.modelName}.`);
-
-        } catch (error: any) {
-            console.error(`Failed to sync ground truth for ${this.modelClass.modelName}:`, error);
-        } finally {
-             this.isSyncing = false;
-        }
+        return Array.from(filteredGroundTruthMap.values());
     }
 }

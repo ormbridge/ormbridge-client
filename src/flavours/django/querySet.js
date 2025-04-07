@@ -105,7 +105,7 @@ export class QuerySet {
    * @param {SerializerOptions} [config.serializerOptions] - Serializer options.
    * @param {boolean} [config.materialized] - Whether the queryset is materialized.
    */
-  constructor(ModelClass, config = {}) {
+  constructor(ModelClass, config = {}, parent = null) {
     this.ModelClass = ModelClass;
     this.nodes = config.nodes || [];
     this._orderBy = config.orderBy;
@@ -116,6 +116,7 @@ export class QuerySet {
     this._initialQueryset = config.initialQueryset;
     this._serializerOptions = config.serializerOptions || {};
     this._materialized = config.materialized || false;
+    this._parent = parent
   }
 
   /**
@@ -133,8 +134,8 @@ export class QuerySet {
       prefetchRelated: [...this._prefetchRelated],
       initialQueryset: this._initialQueryset,
       serializerOptions: { ...this._serializerOptions },
-      materialized: this._materialized
-    });
+      materialized: this._materialized,
+    }, this._parent);
   }
 
   /**

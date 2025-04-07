@@ -237,7 +237,6 @@ export class Store<T extends Record<string, any>> {
     let pks = responseData.data.map(instance => instance[modelClass.primaryKeyField])
 
     // Set the ground truth for the queryset store to this new list of PKs
-    console.log('qs storing', pks)
     querysetStore.setGroundTruth(pks);
   }
 
