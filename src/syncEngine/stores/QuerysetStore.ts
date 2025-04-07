@@ -89,7 +89,7 @@ export class QuerysetStore<T extends Record<string, any>> {
         this._persistOperations();
     }
 
-     updateOperation(operation: Operation<T>): boolean {
+    updateOperation(operation: Operation<T>): boolean {
         let existingIndex = this.operations.findIndex(op => op.operationId === operation.operationId);
         if (existingIndex !== -1) {
              this.operations[existingIndex] = operation;

@@ -13,7 +13,6 @@ interface ModelRegistry {
   [modelName: string]: typeof Model;
 }
 
-
 /**
  * Interface for the structure of included data or primary data within an API response.
  */
@@ -187,7 +186,6 @@ export class Store<T extends Record<string, any>> {
       // Extract the actual model instances - just get the values from the object
       const instancesArray = Object.values(instances);      
       // Add to ground truth
-      console.log('storeModels', instancesArray)
       store.addToGroundTruth(instancesArray);
     }
   }
@@ -199,11 +197,9 @@ export class Store<T extends Record<string, any>> {
    * @param modelClass - The model class the queryset applies to.
    * @returns A promise resolving to an array of rendered model instances (or potentially other data types depending on render logic).
    */
-  async getQueryset(ast: Object, modelClass: typeof Model): Promise<any[]> { // Return type any[] as render output isn't strictly T[]
+  async getQueryset(ast: Object, modelClass: typeof Model): Promise<Number[] | String[]> {
     let querysetStore = await this.getQuerysetStore(ast, modelClass);
-    console.log('qs gt', querysetStore.groundTruthPks)
     let result = querysetStore.render();
-    console.log('qs render', result)
     return result
   }
 
