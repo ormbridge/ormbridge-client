@@ -1,12 +1,13 @@
 import { Model } from '../../flavours/django/model';
 import { configInstance } from '../../config.js';
 import { IndexedDBStorage } from '../persistence/IndexedDBStorage';
-import { ModelStore, FetchFunction as ModelFetchFunction } from './ModelStore'
-import { QuerysetStore, FetchFunction as QsFetchFunction } from './QuerysetStore.js';
+import { ModelStore, FetchFunction as ModelFetchFunction, Operation as ModelOperation } from './ModelStore'
+import { QuerysetStore, FetchFunction as QsFetchFunction, Operation as QuerysetOperation } from './QuerysetStore.js';
+import { getStoreKey } from './utils'; // Assuming utils.ts exists
 import hash from 'object-hash';
 
 /**
- * Interface for a model registry
+ * Interface for a model registry mapping model names to model classes.
  */
 interface ModelRegistry {
   [modelName: string]: typeof Model;
@@ -14,238 +15,289 @@ interface ModelRegistry {
 
 
 /**
- * Interface for response data
+ * Interface for the structure of included data or primary data within an API response.
  */
-interface ResponseData {
-    data: T[] | T;
-    included: object
+interface ResponseData<T> {
+    data: T[] | T; // Can be a single object or an array of objects
+    included: object // Typically related objects keyed by model name
 }
 
 /**
- * Interface for an api response
+ * Interface for a standard API response structure containing data and included objects.
  */
-interface Response {
-    data: ResponseData
+interface Response<T> {
+    data: ResponseData<T>
 }
 
 /**
- * Simple store that just provides access to a single IndexedDBStorage instance
- * for a specific backend
+ * Manages data persistence and access for models and querysets for a specific backend.
+ * Provides access to ModelStore and QuerysetStore instances, backed by IndexedDB.
  */
-export class Store {
+export class Store<T extends Record<string, any>> {
   public registry: ModelRegistry;
   private storage: IndexedDBStorage;
   public modelFetchFn: ModelFetchFunction<T>;
   public qsFetchFn: QsFetchFunction<T>;
   public modelStores: Map<string, ModelStore<T>> = new Map();
   public querysetStores: Map<string, QuerysetStore<T>> = new Map();
+  // Cache to hold data loaded from IndexedDB during initialization
+  private _preloadedCache: Map<string, { id: string, data: any }> = new Map();
+  // Promise that resolves once the initial data load from storage is complete
+  private _initPromise: Promise<void>;
 
   /**
-   * Create a new Store instance for a specific backend
-   * @param registry - The model registry mapping names to classes
-   * @param backendName - The name of the backend to load
-   * @param modelFetchFn - Function to fetch single models
-   * @param qsFetchFn - Function to fetch querysets
+   * Creates a new Store instance.
+   * Initializes IndexedDB storage and begins loading any persisted data.
+   *
+   * @param registry - The model registry mapping model names to model classes.
+   * @param backendName - The unique name for the backend, used for IndexedDB database naming.
+   * @param modelFetchFn - The function used to fetch individual model data from the backend.
+   * @param qsFetchFn - The function used to fetch queryset data from the backend.
    */
-  constructor(registry: ModelRegistry, backendName: string, modelFetchFn: ModelFetchFunction<T>, qsFetchFn: QsFetchFunction<T>) { // <--- Corrected qsFetchFn parameter name
-    // Assign the provided registry directly
+  constructor(registry: ModelRegistry, backendName: string, modelFetchFn: ModelFetchFunction<T>, qsFetchFn: QsFetchFunction<T>) {
     this.registry = registry;
-
-    // Initialize one storage instance for this backend
     this.storage = new IndexedDBStorage({
       dbName: `modelsync_${backendName}`,
       storeName: 'cache'
     });
-    this.modelFetchFn = modelFetchFn
-    this.qsFetchFn = qsFetchFn
+    this.modelFetchFn = modelFetchFn;
+    this.qsFetchFn = qsFetchFn;
+    this._initPromise = this._initialize();
+  }
 
-    // Get the configuration
-    const config = configInstance.getConfig();
-
-    // Check if the backend exists in config (optional check, good practice)
-    if (!config.backendConfigs[backendName]) {
-      // Consider throwing an error instead of just logging
-      console.error(`Backend "${backendName}" not found in configuration`);
-      throw new Error(`Backend "${backendName}" not found in configuration`);
-      // return; // Remove return if throwing error
-    }
-    // Check if registry was provided (important if constructor allows optional)
-    if (!this.registry || Object.keys(this.registry).length === 0) {
-        console.error(`Registry provided for backend "${backendName}" is empty or invalid.`);
-        // Optionally throw an error
-        // throw new Error(`Registry provided for backend "${backendName}" is empty or invalid.`);
-    } else {
-        console.log(`Using provided model registry for backend ${backendName}`);
+  /**
+   * Initializes the store by loading all data from IndexedDB into an in-memory cache.
+   * This is called by the constructor.
+   */
+  private async _initialize(): Promise<void> {
+    const allData = await this.storage.loadAll();
+    for (const item of allData) {
+        // Basic check for valid item structure expected from storage
+        if (item && item.id) {
+            this._preloadedCache.set(item.id, item);
+        }
     }
   }
 
   /**
-   * Get or create model store
+   * Returns a promise that resolves when the store's initial data load from
+   * IndexedDB is complete. Ensures subsequent operations have access to cached data.
+   *
+   * @returns A promise that resolves when the store is ready.
    */
-  _getOrCreateModelStore(modelClass: any | undefined){
+  public async whenReady(): Promise<void> {
+      return this._initPromise;
+  }
+
+  /**
+   * Retrieves an existing ModelStore for a given model class or creates a new one
+   * if it doesn't exist. Initializes the store with preloaded data if available.
+   * (Internal use, ensures readiness before proceeding).
+   *
+   * @param modelClass - The model class (e.g., User, Product).
+   * @returns A promise resolving to the ModelStore instance.
+   * @throws If modelClass is undefined.
+   */
+  async getModelStore(modelClass: any | undefined): Promise<ModelStore<T>> {
     if (!modelClass) throw new Error("Cannot get/create model store: modelClass is undefined. Check registry.");
-    if (!this.modelStores.has(modelClass.modelName)){
-        this.modelStores[modelClass.modelName] = new ModelStore(modelClass, this.modelFetchFn, this.storage)
-    }
-    return this.modelStores[modelClass.modelName]
-  }
 
-  getModelStore(modelClass) {
-    const realStore = this._getOrCreateModelStore(modelClass);
-    
-    // Return a proxy that queues operations if not ready
-    return new Proxy(realStore, {
-      get: (target, prop) => {
-        if (typeof target[prop] === 'function') {
-          return (...args) => {
-            if (target.isReady) {
-              return target[prop](...args);
-            } else {
-              // Queue the operation
-              return target.whenReady().then(() => target[prop](...args));
-            }
-          };
-        }
-        return target[prop];
-      }
-    });
+    await this.whenReady(); // Wait for initial data load
+
+    const modelName = modelClass.modelName; // Use unique model name from the class as the key
+    if (!this.modelStores.has(modelName)){
+        // Calculate keys to look up in preloaded cache
+        const storeKey = getStoreKey(modelClass);
+        const operationsKey = `modelstore::${storeKey}::operations`;
+        const groundTruthKey = `modelstore::${storeKey}::groundtruth`;
+
+        // Retrieve preloaded data from the cache, defaulting to empty arrays if not found
+        const initialOperations = this._preloadedCache.get(operationsKey)?.data || [];
+        const initialGroundTruth = this._preloadedCache.get(groundTruthKey)?.data || [];
+
+        // Pass initial data to the ModelStore constructor
+        const newStore = new ModelStore<T>(
+            modelClass,
+            this.modelFetchFn,
+            this.storage,
+            initialGroundTruth,
+            initialOperations
+        );
+        this.modelStores.set(modelName, newStore); // Store the new instance in the map
+    }
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    return this.modelStores.get(modelName)!; // Return the existing or newly created store
   }
 
   /**
-   * Get queryset store
+   * Retrieves an existing QuerysetStore for a given AST and model class, or creates
+   * a new one. Initializes the store with preloaded data if available.
+   * (Internal use, ensures readiness before proceeding).
+   *
+   * @param ast - The Abstract Syntax Tree representing the queryset query.
+   * @param modelClass - The model class the queryset applies to.
+   * @returns A promise resolving to the QuerysetStore instance.
+   * @throws If modelClass is undefined.
    */
-  _getOrCreateQuerysetStore(ast: any, modelClass: any | undefined){
-    // hashed form of the ast for lookups
+  async getQuerysetStore(ast: any, modelClass: any | undefined): Promise<QuerysetStore<T>> {
     if (!modelClass) throw new Error("Cannot get/create queryset store: modelClass is undefined. Check registry.");
-    let astHash = hash(ast)
-    if (!this.querysetStores.has(astHash)){
-        this.querysetStores[astHash] = new QuerysetStore(modelClass, this.qsFetchFn, ast, this.storage)
-    }
-    return this.querysetStores[astHash]
-  }
 
-  getQuerysetStore(ast: any, modelClass: any) {
-    // Hashed form of the ast for lookups
-    const astHash = hash(ast);
-    
-    if (!this.querysetStores.has(astHash)) {
-      const store = new QuerysetStore(modelClass, this.qsFetchFn, ast, this.storage);
-      this.querysetStores.set(astHash, store);
+    await this.whenReady(); // Wait for initial data load
+
+    const astHash = hash(ast); // Use a hash of the AST as the unique key
+    if (!this.querysetStores.has(astHash)){
+        // Calculate keys for storage lookup based on model and AST hash
+        const storeKeyBase = getStoreKey(modelClass);
+        const storeKey = `${storeKeyBase}::querysetstore::${astHash}`;
+        const operationsKey = `${storeKey}::operations`;
+        const groundTruthKey = `${storeKey}::groundtruth`;
+
+        // Retrieve preloaded data from the cache, defaulting to empty arrays if not found
+        const initialOperations = this._preloadedCache.get(operationsKey)?.data || [];
+        const initialGroundTruthPks = this._preloadedCache.get(groundTruthKey)?.data || [];
+
+        // Pass initial data to the QuerysetStore constructor
+        const newStore = new QuerysetStore<T>(
+            modelClass,
+            this.qsFetchFn,
+            ast,
+            this.storage,
+            initialGroundTruthPks,
+            initialOperations
+        );
+        this.querysetStores.set(astHash, newStore); // Store the new instance
     }
-    
-    const realStore = this.querysetStores.get(astHash);
-    
-    // Return a proxy that queues operations if not ready
-    return new Proxy(realStore, {
-      get: (target, prop) => {
-        if (typeof target[prop] === 'function') {
-          return (...args) => {
-            if (target.isReady) {
-              return target[prop](...args);
-            } else {
-              // Queue the operation until ready
-              return target.whenReady().then(() => target[prop](...args));
-            }
-          };
-        }
-        return target[prop];
-      }
-    });
+     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    return this.querysetStores.get(astHash)!; // Return the existing or newly created store
   }
 
   /**
-   * Store models
+   * Stores model instances found in the `included` section of API response data.
+   * Adds these instances to the ground truth of their respective ModelStores.
+   *
+   * @param responseData - The `data` part of an API response, containing `included` models.
    */
-  storeModels(responseData) {
-    // add the full included models to the store
+  async storeModels(responseData: ResponseData<T>) {
     let store;
     let modelClass;
+    // Iterate over included models grouped by model name (mName)
     for (let [mName, instances] of Object.entries(responseData.included || {})) {
-      modelClass = this.registry![mName];
-      store = this.getModelStore(modelClass);
-      console.log(`storing:`, Object.values(instances))
-      store.addToGroundTruth(Object.values(instances));
+      modelClass = this.registry![mName]; // Find the corresponding model class in the registry
+      store = await this.getModelStore(modelClass);
+      
+      // Extract the actual model instances - just get the values from the object
+      const instancesArray = Object.values(instances);      
+      // Add to ground truth
+      console.log('storeModels', instancesArray)
+      store.addToGroundTruth(instancesArray);
     }
   }
 
   /**
-   * Get queryset
+   * Retrieves and renders the current state of a queryset based on its AST.
+   *
+   * @param ast - The Abstract Syntax Tree representing the queryset query.
+   * @param modelClass - The model class the queryset applies to.
+   * @returns A promise resolving to an array of rendered model instances (or potentially other data types depending on render logic).
    */
-  getQueryset(ast: Object, modelClass: Model){
-    let querysetStore = this.getQuerysetStore(ast, modelClass)
-    return querysetStore.render()
-  }
-
-  /**
-   * Get models
-   */
-  getModels(pks= null, modelClass: Model){
-    let modelStore = this.getModelStore(modelClass)
-    let result = modelStore.render(pks)
+  async getQueryset(ast: Object, modelClass: typeof Model): Promise<any[]> { // Return type any[] as render output isn't strictly T[]
+    let querysetStore = await this.getQuerysetStore(ast, modelClass);
+    console.log('qs gt', querysetStore.groundTruthPks)
+    let result = querysetStore.render();
+    console.log('qs render', result)
     return result
   }
 
   /**
-   * Store queryset
+   * Retrieves and renders specific model instances by their primary keys,
+   * or all known models of a class if no primary keys are provided.
+   *
+   * @param pks - A Set of primary keys to retrieve, or null/undefined to retrieve all models.
+   * @param modelClass - The model class to retrieve instances of.
+   * @returns A promise resolving to an array of rendered model instances.
    */
-  storeQueryset(responseData, ast) {    
-    // convert the response data from a list of instances into a list of pks
-    let modelClass;
-    try {
-      modelClass = Array.isArray(responseData.data) 
-        ? this.registry![responseData.data[0].type] 
-        : this.registry![responseData.data.type];
-    } catch (error) {
-      console.error('Error getting model class:', error);
-      throw error;
-    }
-    
-    let toAdd = Array.isArray(responseData.data) ? responseData.data : [responseData.data];
-    
-    let querysetStore = this.getQuerysetStore(ast, modelClass);
-    const pks = toAdd.map(instance => {
-      const pk = instance[modelClass.primaryKeyField];
-      return pk;
-    });
-    console.log(`storing queryset:`, pks)
-
-    querysetStore.setGroundTruth(pks);
+  async getModels(pks: Set<any> | null = null, modelClass: typeof Model): Promise<T[]> {
+    let modelStore = await this.getModelStore(modelClass);
+    let result = modelStore.render(pks);
+    return result;
   }
 
   /**
-   * Load a backend response into the store
+   * Stores the primary keys of the main data returned for a specific queryset query (AST).
+   * Updates the ground truth (list of primary keys) for the corresponding QuerysetStore.
+   *
+   * @param responseData - The `data` part of an API response, containing the primary data array/object.
+   * @param ast - The Abstract Syntax Tree representing the queryset query this data corresponds to.
+   * @throws If the model type cannot be determined from the response data or found in the registry.
    */
-  injestResponse(response, ast) {    
-    let metrics = ['sum', 'min', 'max', 'avg', 'count'];
-  
-    if (!ast.materialized || metrics.includes(ast.type)) {
-      console.warn('injestResponse only stores model queryset responses');
-    }
-  
-    if (response.data) {
-      this.storeModels(response.data);
-      this.storeQueryset(response.data, ast);
-    } else {
-      console.log('Response has no data!', response);
-    }
+  async storeQueryset(responseData: ResponseData<T>, ast: object) {
+    if (!Array.isArray(responseData.data)) return;
+    
+    let modelType = responseData.data[0].type
+    
+    if (!modelType) throw new Error(`Response data ${responseData.data[0]} has no model type!`)
+    
+    let modelClass = this.registry![modelType]
+    let querysetStore = await this.getQuerysetStore(ast, modelClass);
+    let pks = responseData.data.map(instance => instance[modelClass.primaryKeyField])
+
+    // Set the ground truth for the queryset store to this new list of PKs
+    console.log('qs storing', pks)
+    querysetStore.setGroundTruth(pks);
   }
+
+
+  /**
+   * Processes a full API response, storing both the included models and the
+   * primary keys of the main queryset data. Skips processing for non-materialized
+   * or metric-based responses based on AST properties.
+   *
+   * @param response - The full API response object.
+   * @param ast - The Abstract Syntax Tree representing the original query.
+   */
+  async injestResponse(response: Response<T>, ast: any) {
+    // Determine if the response should be stored based on AST properties.
+    const isMaterialized = ast?.materialized === true;
+    const isMetric = ['sum', 'min', 'max', 'avg', 'count'].includes(ast?.type);
+  
+    if (!isMaterialized || isMetric) return;
+  
+    if (!response?.data) {
+      console.log('Response has no data or unexpected structure!', response);
+      return
+    }
+
+    await this.storeModels(response.data);
+    if (!Array.isArray(response.data.data)) return;
+    await this.storeQueryset(response.data, ast);
+  }
+
 }
 
-// Singleton store factory
-const storeInstances: { [backendName: string]: Store } = {};
+// Singleton store management: Holds one Store instance per backendName.
+const storeInstances: { [backendName: string]: Store<any> } = {}; // Use Store<any> to allow different T for different backends
 
 /**
- * Factory function to get or create a Store instance
- * @param backendName - The name of the backend to load
- * @returns The Store instance for the specified backend
+ * Factory function to get a singleton Store instance for a specific backend.
+ * Creates a new Store if one doesn't exist for the given backend name.
+ *
+ * @param backendName - The unique name of the backend.
+ * @param registry - The model registry for this backend.
+ * @param modelFetchFn - The function to fetch single models for this backend.
+ * @param qsFetchFn - The function to fetch querysets for this backend.
+ * @returns The singleton Store instance for the specified backend.
  */
 export function getStore<T extends Record<string, any>>(
     backendName: string,
+    registry: ModelRegistry,
     modelFetchFn: ModelFetchFunction<T>,
     qsFetchFn: QsFetchFunction<T>
   ): Store<T> {
     if (!storeInstances[backendName]) {
-      storeInstances[backendName] = new Store<T>(backendName, modelFetchFn, qsFetchFn);
+      // Create and store a new instance if one doesn't exist for this backend
+      storeInstances[backendName] = new Store<T>(registry, backendName, modelFetchFn, qsFetchFn);
     }
-    return storeInstances[backendName];
+    // Return the existing or newly created instance.
+    // Type assertion might be needed if strict type checking is enforced across different T usages,
+    // ensuring the returned store matches the expected generic type T.
+    return storeInstances[backendName] as Store<T>;
   }

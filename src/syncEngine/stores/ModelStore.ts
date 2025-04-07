@@ -24,10 +24,12 @@ export class Operation<T extends Record<string, any>> {
         this.operationId = data.operationId || `op_${uuidv7()}`;
         this.type = data.type;
         this.status = data.status || 'inflight';
-        this.instances = Array.isArray(data.instances) ? data.instances : [data.instances];
+        const instancesRaw = Array.isArray(data.instances) ? data.instances : [data.instances];
+        this.instances = instancesRaw;
         this.timestamp = data.timestamp || Date.now();
     }
 }
+
 
 export interface ModelClass<T extends Record<string, any>> {
     primaryKeyField: keyof T;
@@ -45,55 +47,32 @@ export class ModelStore<T extends Record<string, any>> {
     public groundTruthArray: T[];
     public operations: Operation<T>[];
     public isSyncing: boolean;
-    public isReady: boolean;
 
     private _storage: IndexedDBStorage;
     private _storeKey: string;
     private _operationsKey: string;
     private _groundTruthKey: string;
-    private _initPromise: Promise<void>;
 
-    constructor(modelClass: ModelClass<T>, fetchFn: FetchFunction<T>, storage: IndexedDBStorage) {       
+
+    constructor(
+        modelClass: ModelClass<T>,
+        fetchFn: FetchFunction<T>,
+        storage: IndexedDBStorage,
+        initialGroundTruth: T[],
+        initialOperations: OperationData<T>[]
+    ) {
         this.modelClass = modelClass;
         this.fetchFn = fetchFn;
-        this.groundTruthArray = [];
-        this.operations = [];
         this.isSyncing = false;
-        this.isReady = false;
 
-        // Set up key names
         this._storeKey = getStoreKey(modelClass);
         this._operationsKey = `modelstore::${this._storeKey}::operations`;
         this._groundTruthKey = `modelstore::${this._storeKey}::groundtruth`;
-        
-        // Store the provided storage instance
+
         this._storage = storage;
-        this._initPromise = this._hydrate();
-    }
 
-    async whenReady() {
-        await this._initPromise;
-        return this;
-    }
-
-    async _hydrate(): Promise<void> {
-        try {
-            // Load persisted operations and ground truth.
-            const persistedOps = await this._storage.load(this._operationsKey);
-            const persistedGT = await this._storage.load(this._groundTruthKey);
-            
-            if (persistedOps && persistedOps.data) {
-                this.operations = persistedOps.data || [];
-            }
-            if (persistedGT && persistedGT.data) {
-                this.groundTruthArray = persistedGT.data || [];
-            }
-            this.isReady = true;
-        } catch (error) {
-            console.error("Hydration error:", error);
-            // Optionally mark as ready anyway if hydration fails.
-            this.isReady = true;
-        }
+        this.groundTruthArray = initialGroundTruth ? initialGroundTruth : [];
+        this.operations = initialOperations ? initialOperations.map(opData => new Operation<T>(opData)) : [];
     }
 
     get pkField(): keyof T {
@@ -101,122 +80,100 @@ export class ModelStore<T extends Record<string, any>> {
     }
 
     get groundTruthPks(): any[] {
-        // Returns the primary keys of the ground truth instances
         return this.groundTruthArray.map(instance => instance[this.pkField]);
     }
 
     addOperation(operation: Operation<T>): void {
         this.operations.push(operation);
-        this._storage
-            .save({ id: this._operationsKey, data: this.operations })
-            .catch(error => console.error("Failed to persist operations:", error));
+        this._persistOperations();
     }
 
     updateOperation(operation: Operation<T>): boolean {
-        let existing = this.operations.findIndex(op => op.operationId === operation.operationId);
-        if (existing !== -1) {
-            this.operations[existing] = new Operation<T>({
-                ...this.operations[existing],
-                status: operation.status,
-                instances: operation.instances,
-                timestamp: operation.timestamp
-            });
-            
-            // Persist the updated operations
-            this._storage
-                .save({ id: this._operationsKey, data: this.operations })
-                .catch(error => console.error("Failed to persist updated operations:", error));
-                
+        let existingIndex = this.operations.findIndex(op => op.operationId === operation.operationId);
+        if (existingIndex !== -1) {
+             this.operations[existingIndex] = operation;
+
+            this._persistOperations();
             return true;
         }
         return false;
     }
 
-    confirm(operationId: String, instances: T[]): void {
-        // helper wrapper around updateOperation to confirm the operation
-        this.updateOperation(new Operation<T>({
-            operationId: operationId,
-            status: 'confirmed',
-            instances: instances,
-            timestamp: Date.now()
-        } as OperationData<T>));
-    }
-
-    reject(operationId: String, instances: T[]): void {
-        // helper wrapper around updateOperation to reject the operation
-        this.updateOperation(new Operation<T>({
-            operationId: operationId,
-            status: 'rejected',
-            timestamp: Date.now()
-        } as OperationData<T>));
-    }
-
-    setOperations(operations: Operation<T>[]): void {
-        this.operations = operations;
-        
-        // Persist the operations
+    private _persistOperations(): void {
         this._storage
             .save({ id: this._operationsKey, data: this.operations })
             .catch(error => console.error("Failed to persist operations:", error));
     }
 
-    setGroundTruth(groundTruth: T[]): void {
-        // override the existing ground truth
-        this.groundTruthArray = groundTruth;
-        this._storage
+    private _persistGroundTruth(): void {
+         this._storage
             .save({ id: this._groundTruthKey, data: this.groundTruthArray })
             .catch(error => console.error("Failed to persist ground truth:", error));
+    }
+
+    confirm(operationId: string, instances: T[]): void {
+        const opIndex = this.operations.findIndex(op => op.operationId === operationId);
+        if (opIndex !== -1) {
+            const opToConfirm = this.operations[opIndex];
+            opToConfirm.status = 'confirmed';
+            opToConfirm.instances = instances;
+            opToConfirm.timestamp = Date.now();
+            this._persistOperations();
+        } else {
+             console.warn(`Attempted to confirm non-existent operation: ${operationId}`);
+        }
+    }
+
+    reject(operationId: string): void {
+        const opIndex = this.operations.findIndex(op => op.operationId === operationId);
+         if (opIndex !== -1) {
+            const opToReject = this.operations[opIndex];
+            opToReject.status = 'rejected';
+            opToReject.timestamp = Date.now();
+            this._persistOperations();
+        } else {
+            console.warn(`Attempted to reject non-existent operation: ${operationId}`);
+        }
+    }
+
+
+    setOperations(operations: Operation<T>[]): void {
+        this.operations = operations;
+        this._persistOperations();
+    }
+
+    setGroundTruth(groundTruth: T[]): void {
+        this.groundTruthArray = groundTruth;
+        this._persistGroundTruth();
     }
 
     addToGroundTruth(instances: T[]): void {
-        // upsert to the existing ground truth
         if (!instances?.length) return;
-        
+
         const pkMap = new Map(instances.map(i => [i[this.pkField], i]));
-        this.groundTruthArray = this.groundTruthArray.map(item => 
-            pkMap.has(item[this.pkField]) 
-            ? { ...item, ...pkMap.get(item[this.pkField]) }
-            : item
-        ).concat(
-            instances.filter(i => !this.groundTruthArray.some(item => item[this.pkField] === i[this.pkField]))
-        );
-        
-        this._storage
-            .save({ id: this._groundTruthKey, data: this.groundTruthArray })
-            .catch(error => console.error("Failed to persist ground truth:", error));
-    }
 
-    filteredOperations(pks: Set<any> | null, operations: Operation<T>[]): Map<string, Operation<T>> | Operation<T>[] {
-        if (!pks) return operations;
+        const updatedGroundTruth: T[] = [];
+        const existingPks = new Set();
 
-        let filteredOperationsMap = new Map<string, Operation<T>>();
-        for (const op of operations) {
-            let instances = op.instances.filter(instance => pks.has(instance[this.pkField]));
-            if (instances.length > 0) {
-                filteredOperationsMap.set(op.operationId, new Operation<T>({
-                    ...op,
-                    instances: instances
-                }));
+        for (const item of this.groundTruthArray) {
+            const pk = item[this.pkField];
+            existingPks.add(pk);
+            if (pkMap.has(pk)) {
+                updatedGroundTruth.push({ ...item, ...pkMap.get(pk) });
+                pkMap.delete(pk);
+            } else {
+                updatedGroundTruth.push(item);
             }
         }
-        return filteredOperationsMap;
+
+        updatedGroundTruth.push(...Array.from(pkMap.values()));
+
+        this.groundTruthArray = updatedGroundTruth;
+        this._persistGroundTruth();
     }
 
-    filteredGroundTruth(pks: Set<any> | null, groundTruthArray: T[]): Map<any, T> {
-        if (pks) {
-            groundTruthArray = groundTruthArray.filter(instance => pks.has(instance[this.pkField]));
-        }
-
-        let groundTruthMap = groundTruthArray.reduce((acc, item) => {
-            acc.set(item[this.pkField], item);
-            return acc;
-        }, new Map<any, T>());
-
-        return groundTruthMap;
-    }
 
     render(pks: Set<any> | null = null): T[] {
-        if (!this.isReady) throw new Error('ModelStore is not ready yet');
         const filteredGroundTruthMap = this.filteredGroundTruth(pks, this.groundTruthArray);
         const filteredOperationsMap = this.filteredOperations(pks, this.operations);
         for (const op of filteredOperationsMap.values()) {
@@ -225,6 +182,36 @@ export class ModelStore<T extends Record<string, any>> {
             }
         }
         return Array.from(filteredGroundTruthMap.values());
+    }
+
+    private filteredOperations(pks: Set<any> | null, operations: Operation<T>[]): Operation<T>[] {
+        if (!pks) return operations;
+
+        let filteredOps: Operation<T>[] = [];
+        for (const op of operations) {
+            let relevantInstances = op.instances.filter(instance => pks.has(instance[this.pkField]));
+            if (relevantInstances.length > 0) {
+                 filteredOps.push(new Operation<T>({
+                    ...op,
+                    instances: relevantInstances
+                }));
+            }
+        }
+        return filteredOps;
+    }
+
+    private filteredGroundTruth(pks: Set<any> | null, groundTruthArray: T[]): Map<any, T> {
+        let filteredArray = groundTruthArray;
+        if (pks) {
+            filteredArray = groundTruthArray.filter(instance => pks.has(instance[this.pkField]));
+        }
+
+        let groundTruthMap = filteredArray.reduce((acc, item) => {
+            acc.set(item[this.pkField], item);
+            return acc;
+        }, new Map<any, T>());
+
+        return groundTruthMap;
     }
 
     applyOperation(operation: Operation<T>, groundTruth: Map<any, T>): Map<any, T> {
@@ -238,24 +225,27 @@ export class ModelStore<T extends Record<string, any>> {
                     }
                     break;
                 case 'update':
-                case 'update_or_create':
                     if (groundTruth.has(pk)) {
-                        // Merge existing instance with updates
                         groundTruth.set(pk, { ...groundTruth.get(pk), ...instance });
                     } else {
-                        // Upsert behavior: Check if there are any delete operations for this pk
                         const hasDeleteOperation = this.operations.some(op => 
                             op.type === 'delete' && 
                             op.status !== 'rejected' && 
                             op.instances.some(inst => inst[this.pkField] === pk)
                         );
                         
-                        // Only upsert if there's no delete operation for this item
                         if (!hasDeleteOperation) {
                             groundTruth.set(pk, instance);
                         }
                     }
                     break;
+                    case 'update_or_create':
+                        if (groundTruth.has(pk)) {
+                            groundTruth.set(pk, { ...groundTruth.get(pk)!, ...instance });
+                        } else {
+                            groundTruth.set(pk, instance);
+                        }
+                        break;
                 case 'delete':
                     if (groundTruth.has(pk)) {
                         groundTruth.delete(pk);
@@ -268,24 +258,34 @@ export class ModelStore<T extends Record<string, any>> {
         return groundTruth;
     }
 
+
     getTrimmedOperations(): Operation<T>[] {
-        const currentTime = Date.now();
-        return this.operations.filter(operation => operation.timestamp > currentTime - 1000 * 60 * 2);
+        const twoMinutesAgo = Date.now() - 1000 * 60 * 2;
+        return this.operations.filter(operation => operation.timestamp > twoMinutesAgo);
     }
 
     async sync(): Promise<void> {
-        if (this.isSyncing) throw new Error('Already syncing, cannot sync again');
+        if (this.isSyncing) {
+            console.warn('Already syncing, sync request ignored.');
+            return;
+        }
         this.isSyncing = true;
 
         try {
-            const newGroundTruth = await this.fetchFn({ pks: this.groundTruthPks });
-            this.groundTruthArray = newGroundTruth;
-            this.operations = this.getTrimmedOperations();
-            this.isSyncing = false;
-            return;
+            const currentPks = this.groundTruthPks;
+            const newGroundTruth = await this.fetchFn({ pks: currentPks, modelClass: this.modelClass });
+
+            this.setGroundTruth(newGroundTruth);
+
+            const trimmedOps = this.getTrimmedOperations();
+            this.setOperations(trimmedOps);
+
+            console.log(`Sync completed for ${this.modelClass.modelName}.`);
+
         } catch (error: any) {
-            this.isSyncing = false;
-            throw new Error(`Failed to sync ground truth: ${error.message}`);
+            console.error(`Failed to sync ground truth for ${this.modelClass.modelName}:`, error);
+        } finally {
+             this.isSyncing = false;
         }
     }
 }
