@@ -108,7 +108,7 @@ import { loadConfigFromFile } from '../configFileLoader.js';
 // Handlebars Templates & Helpers
 // --------------------
 
-// Template for JavaScript implementation
+// Updated JS_MODEL_TEMPLATE with getters and setters
 const JS_MODEL_TEMPLATE = `/**
  * This file was auto-generated. Do not make direct changes to the file.
 {{#if description}}
@@ -166,16 +166,58 @@ export class {{className}} extends Model {
   constructor(data) {
     {{className}}.validateFields(data);
     super(data);
+    
+    // Define getters and setters for all fields
+    this._defineProperties();
+    
+    // Initialize fields from data
+    this._initializeFields(data);
+  }
+  
+  /**
+   * Define property getters and setters for all model fields
+   * @private
+   */
+  _defineProperties() {
+    // For each field, define a property that gets/sets from internal storage
+    {{className}}.fields.forEach(field => {
+      Object.defineProperty(this, field, {
+        get: function() {
+          return this.getField(field);
+        },
+        set: function(value) {
+          this.setField(field, value);
+        },
+        enumerable: true, // Make sure fields are enumerable for serialization
+        configurable: true
+      });
+    });
+  }
+  
+  /**
+   * Initialize all fields from the provided data
+   * @private
+   * @param {Object} data - The data for initialization
+   */
+  _initializeFields(data) {
+    if (!data) return;
+    
 {{#each properties}}
   {{#if isRelationship}}
     {{#if isArrayRelationship}}
-    this.{{name}} = data.{{name}} 
-      ? data.{{name}}.map(item => createModelInstance({{relationshipClassName}}, item))
-      : data.{{name}};
+    // Initialize array relationship field
+    if (data.{{name}}) {
+      this.{{name}} = data.{{name}}.map(item => createModelInstance({{relationshipClassName}}, item));
+    } else {
+      this.{{name}} = data.{{name}};
+    }
     {{else}}
-    this.{{name}} = data.{{name}} 
-      ? createModelInstance({{relationshipClassName}}, data.{{name}})
-      : data.{{name}};
+    // Initialize single relationship field
+    if (data.{{name}}) {
+      this.{{name}} = createModelInstance({{relationshipClassName}}, data.{{name}});
+    } else {
+      this.{{name}} = data.{{name}};
+    }
     {{/if}}
   {{else}}
     this.{{name}} = data.{{name}};
@@ -840,6 +882,135 @@ export * from '{{this.relativePath}}';
 }
 
 // --------------------
+// Model Registry Generation
+// --------------------
+
+/**
+ * Generates a static model registry file for each backend
+ * and organizes models by their name within each backend.
+ * 
+ * @param {Array<{model: string, relativePath: string, backend: string}>} generatedFiles - All generated model files
+ * @param {Object.<string, BackendConfig>} backendConfigs - Configuration for each backend
+ * @returns {Promise<void>}
+ */
+async function generateModelRegistry(generatedFiles, backendConfigs) {
+  console.log('Generating model registry files...');
+  
+  // Group files by backend
+  const filesByBackend = generatedFiles.reduce((acc, file) => {
+    const backend = file.backend;
+    acc[backend] = acc[backend] || [];
+    acc[backend].push(file);
+    return acc;
+  }, {});
+  
+  // For each backend, create a separate registry file
+  for (const [backendName, files] of Object.entries(filesByBackend)) {
+    const backend = backendConfigs[backendName];
+    const imports = [];
+    const registryEntries = [];
+    
+    for (const file of files) {
+      const modelParts = file.model.split('.');
+      const modelName = modelParts[modelParts.length - 1];
+      const className = modelName.charAt(0).toUpperCase() + modelName.slice(1);
+      
+      // Create a unique import name to avoid conflicts
+      const importAlias = `${file.model.replace(/\./g, '_')}`;
+      
+      // Add import statement using the relative path from the registry file
+      // to the generated model file
+      imports.push(`import { ${className} as ${importAlias} } from '${file.relativePath}';`);
+      
+      // Add to registry entries
+      registryEntries.push(`  '${file.model}': ${importAlias},`);
+    }
+    
+    // Compose the registry file content for this backend
+    const registryFileContent = `/**
+ * This file is auto-generated. Do not edit directly.
+ * 
+ * A registry of all model classes for the "${backendName}" backend.
+ */
+
+import { Model } from '@statezero/core';
+
+${imports.join('\n')}
+
+/**
+ * The model registry object for the "${backendName}" backend.
+ * @type {Object.<string, typeof Model>}
+ */
+const modelRegistry = {
+${registryEntries.join('\n')}
+};
+
+/**
+ * Get a model class from the registry
+ * @param {string} modelName - The full model name (including app prefix if any)
+ * @returns {typeof Model} The model class
+ * @throws {Error} If the model is not found
+ */
+export function getModel(modelName) {
+  if (!modelRegistry[modelName]) {
+    throw new Error(\`Model "\${modelName}" not found in backend "${backendName}"\`);
+  }
+  
+  return modelRegistry[modelName];
+}
+
+/**
+ * Check if a model exists in the registry
+ * @param {string} modelName - The full model name
+ * @returns {boolean} True if the model exists
+ */
+export function hasModel(modelName) {
+  return !!modelRegistry[modelName];
+}
+
+/**
+ * Get all models for this backend
+ * @returns {Object.<string, typeof Model>} All models
+ */
+export function getAllModels() {
+  return modelRegistry;
+}
+
+export default modelRegistry;
+`;
+
+    // Write the registry file at the root of this backend's generated types directory
+    const registryFilePath = path.join(backend.GENERATED_TYPES_DIR, 'modelRegistry.js');
+    await fs.writeFile(registryFilePath, registryFileContent);
+    
+    // Also generate TypeScript declaration file
+    const dtsContent = `/**
+ * This file is auto-generated. Do not edit directly.
+ */
+
+import { Model } from '@statezero/core';
+
+/**
+ * The model registry object for the "${backendName}" backend.
+ */
+declare const modelRegistry: {
+  [modelName: string]: typeof Model;
+};
+
+export function getModel(modelName: string): typeof Model;
+export function hasModel(modelName: string): boolean;
+export function getAllModels(): Record<string, typeof Model>;
+
+export default modelRegistry;
+`;
+    
+    await fs.writeFile(path.join(backend.GENERATED_TYPES_DIR, 'modelRegistry.d.ts'), dtsContent);
+    
+    console.log(`✅ Model registry generated for backend "${backendName}"`);
+  }
+}
+
+// --------------------
 // Main Runner: Fetch models and prompt selection
 // --------------------
 
@@ -923,8 +1094,11 @@ async function main() {
     progressBar.stop();
   }
 
-  // Use the new app-level index file generator
+  // Generate an index file per app
   await generateAppLevelIndexFiles(allGeneratedFiles, backendConfigs);
+
+  // Generate the model registry
+  await generateModelRegistry(allGeneratedFiles, backendConfigs);
 
   console.log(`✨ Generated JavaScript files with TypeScript declarations for ${selectedModels.length} models across ${Object.keys(backendConfigs).length} backends.`);
 }

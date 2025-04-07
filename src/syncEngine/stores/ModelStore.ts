@@ -35,7 +35,7 @@ export interface ModelClass<T extends Record<string, any>> {
     modelName: string;
 }
 
-export type FetchFunction<T extends Record<string, any>> = (params: { pks: any[] }) => Promise<T[]>;
+export type FetchFunction<T extends Record<string, any>> = (params: { pks: any[], modelClass: any }) => Promise<T[]>;
 
 
 
@@ -51,6 +51,7 @@ export class ModelStore<T extends Record<string, any>> {
     private _storeKey: string;
     private _operationsKey: string;
     private _groundTruthKey: string;
+    private _initPromise: Promise<void>;
 
     constructor(modelClass: ModelClass<T>, fetchFn: FetchFunction<T>, storage: IndexedDBStorage) {       
         this.modelClass = modelClass;
@@ -67,7 +68,12 @@ export class ModelStore<T extends Record<string, any>> {
         
         // Store the provided storage instance
         this._storage = storage;
-        this._hydrate()
+        this._initPromise = this._hydrate();
+    }
+
+    async whenReady() {
+        await this._initPromise;
+        return this;
     }
 
     async _hydrate(): Promise<void> {
@@ -155,7 +161,26 @@ export class ModelStore<T extends Record<string, any>> {
     }
 
     setGroundTruth(groundTruth: T[]): void {
+        // override the existing ground truth
         this.groundTruthArray = groundTruth;
+        this._storage
+            .save({ id: this._groundTruthKey, data: this.groundTruthArray })
+            .catch(error => console.error("Failed to persist ground truth:", error));
+    }
+
+    addToGroundTruth(instances: T[]): void {
+        // upsert to the existing ground truth
+        if (!instances?.length) return;
+        
+        const pkMap = new Map(instances.map(i => [i[this.pkField], i]));
+        this.groundTruthArray = this.groundTruthArray.map(item => 
+            pkMap.has(item[this.pkField]) 
+            ? { ...item, ...pkMap.get(item[this.pkField]) }
+            : item
+        ).concat(
+            instances.filter(i => !this.groundTruthArray.some(item => item[this.pkField] === i[this.pkField]))
+        );
+        
         this._storage
             .save({ id: this._groundTruthKey, data: this.groundTruthArray })
             .catch(error => console.error("Failed to persist ground truth:", error));

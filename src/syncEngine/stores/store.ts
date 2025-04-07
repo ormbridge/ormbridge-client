@@ -1,131 +1,251 @@
-import { v7 as uuidv7 } from 'uuid';
-import { ModelStore } from './ModelStore'
-import { QuerysetStore } from './QuerysetStore'
+import { Model } from '../../flavours/django/model';
+import { configInstance } from '../../config.js';
+import { IndexedDBStorage } from '../persistence/IndexedDBStorage';
+import { ModelStore, FetchFunction as ModelFetchFunction } from './ModelStore'
+import { QuerysetStore, FetchFunction as QsFetchFunction } from './QuerysetStore.js';
+import hash from 'object-hash';
 
-export type OperationType = 'create' | 'update' | 'delete' | 'read' | 'list' | 'get_or_create' | 
-                           'update_or_create' | 'first' | 'last' | 'min' | 'max' | 'count' | 
-                           'sum' | 'avg' | 'exists' | 'search';
-export type OperationStatus = 'inflight' | 'confirmed' | 'rejected';
-export type OperationCategory = 'mutation' | 'read' | 'read::agg';
-
-export interface OperationData<T extends Record<string, any>> {
-    operationId?: string;
-    type: OperationType;
-    status?: OperationStatus;
-    instances: T | T[];
-    timestamp?: number;
+/**
+ * Interface for a model registry
+ */
+interface ModelRegistry {
+  [modelName: string]: typeof Model;
 }
 
-export class Operation<T extends Record<string, any>> {
-    public operationId: string;
-    public type: OperationType;
-    public status: OperationStatus;
-    public instances: T[];
-    public timestamp: number;
 
-    constructor(data: OperationData<T>) {
-        this.operationId = data.operationId || `op_${uuidv7()}`;
-        this.type = data.type;
-        this.status = data.status || 'inflight';
-        this.instances = Array.isArray(data.instances) ? data.instances : [data.instances];
-        this.timestamp = data.timestamp || Date.now();
-    }
+/**
+ * Interface for response data
+ */
+interface ResponseData {
+    data: T[] | T;
+    included: object
 }
 
-export interface QueryAst {
-    type?: OperationType;
-    filter?: any;
-    search?: { searchQuery: string; searchFields?: string[] };
-    aggregations?: any[];
-    selectRelated?: string[];
-    prefetchRelated?: string[];
-    orderBy?: any;
-    serializerOptions?: any;
-    data?: any;
-    lookup?: any;
-    defaults?: any;
-    field?: string;
+/**
+ * Interface for an api response
+ */
+interface Response {
+    data: ResponseData
 }
 
-export class StateZeroStore<T extends Record<string, any>> {
-    private modelStore: ModelStore<T>;
-    private querysetStore: QuerysetStore<T>;
-    public modelFetchFn: Function;
-    public querysetFetchFn: Function;
+/**
+ * Simple store that just provides access to a single IndexedDBStorage instance
+ * for a specific backend
+ */
+export class Store {
+  public registry: ModelRegistry;
+  private storage: IndexedDBStorage;
+  public modelFetchFn: ModelFetchFunction<T>;
+  public qsFetchFn: QsFetchFunction<T>;
+  public modelStores: Map<string, ModelStore<T>> = new Map();
+  public querysetStores: Map<string, QuerysetStore<T>> = new Map();
 
-    constructor(modelStore: ModelStore<T>, querysetStore: QuerysetStore<T>, modelFetchFn: Function, querysetFetchFn: Function){
-        this.modelStore = modelStore;
-        this.querysetStore = querysetStore;
-        this.modelFetchFn = modelFetchFn;
-        this.querysetFetchFn = querysetFetchFn;
+  /**
+   * Create a new Store instance for a specific backend
+   * @param registry - The model registry mapping names to classes
+   * @param backendName - The name of the backend to load
+   * @param modelFetchFn - Function to fetch single models
+   * @param qsFetchFn - Function to fetch querysets
+   */
+  constructor(registry: ModelRegistry, backendName: string, modelFetchFn: ModelFetchFunction<T>, qsFetchFn: QsFetchFunction<T>) { // <--- Corrected qsFetchFn parameter name
+    // Assign the provided registry directly
+    this.registry = registry;
+
+    // Initialize one storage instance for this backend
+    this.storage = new IndexedDBStorage({
+      dbName: `modelsync_${backendName}`,
+      storeName: 'cache'
+    });
+    this.modelFetchFn = modelFetchFn
+    this.qsFetchFn = qsFetchFn
+
+    // Get the configuration
+    const config = configInstance.getConfig();
+
+    // Check if the backend exists in config (optional check, good practice)
+    if (!config.backendConfigs[backendName]) {
+      // Consider throwing an error instead of just logging
+      console.error(`Backend "${backendName}" not found in configuration`);
+      throw new Error(`Backend "${backendName}" not found in configuration`);
+      // return; // Remove return if throwing error
     }
-
-    getOperationType(ast: QueryAst, isMaterialized: boolean): OperationType {
-        // Check if the query is materialized
-        if (!isMaterialized) throw new Error("Cannot execute a non-materialized query. Call a terminal operation first.");
-        if (!ast.type) throw new Error("Cannot execute a query without a type");
-        return ast.type;
+    // Check if registry was provided (important if constructor allows optional)
+    if (!this.registry || Object.keys(this.registry).length === 0) {
+        console.error(`Registry provided for backend "${backendName}" is empty or invalid.`);
+        // Optionally throw an error
+        // throw new Error(`Registry provided for backend "${backendName}" is empty or invalid.`);
+    } else {
+        console.log(`Using provided model registry for backend ${backendName}`);
     }
+  }
 
-    getOperationCategory(operationType: OperationType): OperationCategory {
-        switch(operationType) {
-            case 'create':
-            case 'delete':
-            case 'update':
-            case 'update_or_create':
-            case 'get_or_create':
-                return 'mutation';
-            case 'first':
-            case 'last':
-            case 'list':
-            case 'read':
-            case 'search':
-                return 'read';
-            case 'min':
-            case 'max':
-            case 'count':
-            case 'sum':
-            case 'avg':
-            case 'exists':
-                return 'read::agg';
-            default:
-                throw new Error(`Unknown operation type: ${operationType}`);
+  /**
+   * Get or create model store
+   */
+  _getOrCreateModelStore(modelClass: any | undefined){
+    if (!modelClass) throw new Error("Cannot get/create model store: modelClass is undefined. Check registry.");
+    if (!this.modelStores.has(modelClass.modelName)){
+        this.modelStores[modelClass.modelName] = new ModelStore(modelClass, this.modelFetchFn, this.storage)
+    }
+    return this.modelStores[modelClass.modelName]
+  }
+
+  getModelStore(modelClass) {
+    const realStore = this._getOrCreateModelStore(modelClass);
+    
+    // Return a proxy that queues operations if not ready
+    return new Proxy(realStore, {
+      get: (target, prop) => {
+        if (typeof target[prop] === 'function') {
+          return (...args) => {
+            if (target.isReady) {
+              return target[prop](...args);
+            } else {
+              // Queue the operation
+              return target.whenReady().then(() => target[prop](...args));
+            }
+          };
         }
-    }
+        return target[prop];
+      }
+    });
+  }
 
-    async commit(ast: QueryAst, optimistic: boolean = false) {
-        // The main thing, it commits an ast to the store...
-        let operationType = this.getOperationType(ast, true); // Assuming the query is materialized
-        let operationCategory = this.getOperationCategory(operationType);
-        let result;
-        
-        switch (operationCategory) {
-            case 'mutation':
-                result = await this.handleMutation(ast, optimistic);
-                break;
-            case 'read':
-                result = await this.handleReadOperation(ast, optimistic);
-                break;
-            case 'read::agg':
-                result = await this.handleReadAggregation(ast, optimistic);
-                break;
+  /**
+   * Get queryset store
+   */
+  _getOrCreateQuerysetStore(ast: any, modelClass: any | undefined){
+    // hashed form of the ast for lookups
+    if (!modelClass) throw new Error("Cannot get/create queryset store: modelClass is undefined. Check registry.");
+    let astHash = hash(ast)
+    if (!this.querysetStores.has(astHash)){
+        this.querysetStores[astHash] = new QuerysetStore(modelClass, this.qsFetchFn, ast, this.storage)
+    }
+    return this.querysetStores[astHash]
+  }
+
+  getQuerysetStore(ast: any, modelClass: any) {
+    // Hashed form of the ast for lookups
+    const astHash = hash(ast);
+    
+    if (!this.querysetStores.has(astHash)) {
+      const store = new QuerysetStore(modelClass, this.qsFetchFn, ast, this.storage);
+      this.querysetStores.set(astHash, store);
+    }
+    
+    const realStore = this.querysetStores.get(astHash);
+    
+    // Return a proxy that queues operations if not ready
+    return new Proxy(realStore, {
+      get: (target, prop) => {
+        if (typeof target[prop] === 'function') {
+          return (...args) => {
+            if (target.isReady) {
+              return target[prop](...args);
+            } else {
+              // Queue the operation until ready
+              return target.whenReady().then(() => target[prop](...args));
+            }
+          };
         }
-        
-        return result;
-    }
+        return target[prop];
+      }
+    });
+  }
 
-    async handleReadOperation(ast: QueryAst, optimistic: boolean) {
-        // handles read, list, first, last etc.
-        // Implementation details here
+  /**
+   * Store models
+   */
+  storeModels(responseData) {
+    // add the full included models to the store
+    let store;
+    let modelClass;
+    for (let [mName, instances] of Object.entries(responseData.included || {})) {
+      modelClass = this.registry![mName];
+      store = this.getModelStore(modelClass);
+      console.log(`storing:`, Object.values(instances))
+      store.addToGroundTruth(Object.values(instances));
     }
+  }
 
-    async handleReadAggregation(ast: QueryAst, optimistic: boolean) {
-        // sum, max, min, exists etc.
-        // Implementation details here
-    }
+  /**
+   * Get queryset
+   */
+  getQueryset(ast: Object, modelClass: Model){
+    let querysetStore = this.getQuerysetStore(ast, modelClass)
+    return querysetStore.render()
+  }
 
-    async handleMutation(ast: QueryAst, optimistic: boolean) {
-        // handles create, update, delete etc.
-        // Implementation details here
+  /**
+   * Get models
+   */
+  getModels(pks= null, modelClass: Model){
+    let modelStore = this.getModelStore(modelClass)
+    let result = modelStore.render(pks)
+    return result
+  }
+
+  /**
+   * Store queryset
+   */
+  storeQueryset(responseData, ast) {    
+    // convert the response data from a list of instances into a list of pks
+    let modelClass;
+    try {
+      modelClass = Array.isArray(responseData.data) 
+        ? this.registry![responseData.data[0].type] 
+        : this.registry![responseData.data.type];
+    } catch (error) {
+      console.error('Error getting model class:', error);
+      throw error;
     }
+    
+    let toAdd = Array.isArray(responseData.data) ? responseData.data : [responseData.data];
+    
+    let querysetStore = this.getQuerysetStore(ast, modelClass);
+    const pks = toAdd.map(instance => {
+      const pk = instance[modelClass.primaryKeyField];
+      return pk;
+    });
+    console.log(`storing queryset:`, pks)
+
+    querysetStore.setGroundTruth(pks);
+  }
+
+  /**
+   * Load a backend response into the store
+   */
+  injestResponse(response, ast) {    
+    let metrics = ['sum', 'min', 'max', 'avg', 'count'];
+  
+    if (!ast.materialized || metrics.includes(ast.type)) {
+      console.warn('injestResponse only stores model queryset responses');
+    }
+  
+    if (response.data) {
+      this.storeModels(response.data);
+      this.storeQueryset(response.data, ast);
+    } else {
+      console.log('Response has no data!', response);
+    }
+  }
 }
+
+// Singleton store factory
+const storeInstances: { [backendName: string]: Store } = {};
+
+/**
+ * Factory function to get or create a Store instance
+ * @param backendName - The name of the backend to load
+ * @returns The Store instance for the specified backend
+ */
+export function getStore<T extends Record<string, any>>(
+    backendName: string,
+    modelFetchFn: ModelFetchFunction<T>,
+    qsFetchFn: QsFetchFunction<T>
+  ): Store<T> {
+    if (!storeInstances[backendName]) {
+      storeInstances[backendName] = new Store<T>(backendName, modelFetchFn, qsFetchFn);
+    }
+    return storeInstances[backendName];
+  }

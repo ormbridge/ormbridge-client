@@ -3,6 +3,8 @@ import { getStoreKey } from './utils';
 import { IndexedDBStorage } from '../persistence/IndexedDBStorage';
 import hash from 'object-hash';
 
+export type FetchFunction<T extends Record<string, any>> = (params: { ast: object, modelClass: any }) => Promise<T[]>;
+
 export type OperationType = 'create' | 'update' | 'delete' | 'update_or_create' | 'get_or_create';
 export type OperationStatus = 'inflight' | 'confirmed' | 'rejected';
 
@@ -48,6 +50,7 @@ export class QuerysetStore<T extends Record<string, any>> {
     private _storeKey: string;
     private _operationsKey: string;
     private _groundTruthKey: string;
+    private _initPromise: Promise<void>;
 
     constructor(modelClass: ModelClass<T>, fetchFn: Function, ast: object, storage: IndexedDBStorage) {
         this.modelClass = modelClass;
@@ -61,7 +64,12 @@ export class QuerysetStore<T extends Record<string, any>> {
         this._storeKey = `${getStoreKey(modelClass)}::querysetstore::${this.getASTHash(ast)}`
         this._operationsKey = `${this._storeKey}::operations`;
         this._groundTruthKey = `${this._storeKey}::groundtruth`;
-        this._hydrate();
+        this._initPromise = this._hydrate();
+    }
+
+    async whenReady() {
+        await this._initPromise;
+        return this;
     }
 
     async _hydrate(): Promise<void> {

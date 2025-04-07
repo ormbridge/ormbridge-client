@@ -7,11 +7,8 @@
  * @returns {any} The denormalized response with the same structure as the input
  */
 export function denormalizeResponse(response) {
-  console.log("[denormalizeResponse] Input:", JSON.stringify(response, null, 2).substring(0, 500) + "...");
-  
   // If not an object or null/undefined, return as is
   if (!response || typeof response !== 'object') {
-    console.log("[denormalizeResponse] Not an object, returning as is");
     return response;
   }
 
@@ -26,8 +23,7 @@ export function denormalizeResponse(response) {
       typeof result.data === 'object' && 
       result.included && 
       typeof result.included === 'object') {
-    console.log("[denormalizeResponse] Detected direct normalized structure");
-    
+       
     // Extract the data and included parts
     const { data, included } = result;
     
@@ -36,19 +32,15 @@ export function denormalizeResponse(response) {
     
     // Replace the data property with denormalized version
     result.data = denormalizeEntity(data, included, memo);
-    console.log("[denormalizeResponse] Data after denormalization:", 
-                JSON.stringify(result.data, null, 2).substring(0, 500) + "...");
     
     // Remove the included property as it's no longer needed
     delete result.included;
-    console.log("[denormalizeResponse] Removed 'included' property from result");
     
   } else if (result.data && 
             typeof result.data === 'object' &&
             result.data.data &&
             result.data.included) {
     // Handle nested normalized structure
-    console.log("[denormalizeResponse] Detected nested normalized structure");
     
     // Extract the nested data and included
     const { data, included } = result.data;
@@ -68,17 +60,9 @@ export function denormalizeResponse(response) {
     // Further processing: If result.data now only has a data property,
     // lift it up to replace result.data directly
     if (Object.keys(result.data).length === 1 && 'data' in result.data) {
-      console.log("[denormalizeResponse] Lifting up nested data");
       result.data = result.data.data;
     }
-    
-    console.log("[denormalizeResponse] Data after denormalization:", 
-                JSON.stringify(result.data, null, 2).substring(0, 500) + "...");
-  } else {
-    console.log("[denormalizeResponse] Not a normalized structure, returning with minimal changes");
   }
-  
-  console.log("[denormalizeResponse] Final structure keys:", Object.keys(result));
   return result;
 }
 
@@ -94,7 +78,6 @@ export function denormalizeResponse(response) {
 function denormalizeEntity(entity, included, memo) {
   // Handle arrays
   if (Array.isArray(entity)) {
-    console.log("[denormalizeEntity] Processing array of length:", entity.length);
     return entity.map(item => denormalizeEntity(item, included, memo));
   }
 
@@ -108,14 +91,11 @@ function denormalizeEntity(entity, included, memo) {
   const entityId = entity.id;
 
   if (entityType && entityId !== undefined) {
-    console.log(`[denormalizeEntity] Processing entity reference: ${entityType}:${entityId}`);
-    
     // Create a unique key for memoization
     const entityKey = `${entityType}:${entityId}`;
 
     // Check if this entity is already being processed (circular reference)
     if (memo.has(entityKey)) {
-      console.log(`[denormalizeEntity] Found circular reference: ${entityKey}`);
       return memo.get(entityKey);
     }
 
@@ -131,14 +111,11 @@ function denormalizeEntity(entity, included, memo) {
         included[entityType][entityId]) {
       // Found in included section
       fullEntityData = included[entityType][entityId];
-      console.log(`[denormalizeEntity] Found full data for ${entityType}:${entityId} in included`);
     } else if (!isReferenceOnly) {
       // This is already the full entity
       fullEntityData = entity;
-      console.log(`[denormalizeEntity] Using entity itself as full data (not just a reference)`);
     } else {
       // Reference without corresponding data - return as is
-      console.log(`[denormalizeEntity] Reference without data in included: ${entityType}:${entityId}`);
       return entity;
     }
 
@@ -151,12 +128,10 @@ function denormalizeEntity(entity, included, memo) {
       denormalizedObject[fieldName] = denormalizeEntity(fieldValue, included, memo);
     }
 
-    console.log(`[denormalizeEntity] Completed denormalizing: ${entityType}:${entityId}`);
     return denormalizedObject;
   }
 
   // Handle generic objects (without type/id)
-  console.log("[denormalizeEntity] Processing generic object");
   const result = {};
   for (const [fieldName, fieldValue] of Object.entries(entity)) {
     result[fieldName] = denormalizeEntity(fieldValue, included, memo);

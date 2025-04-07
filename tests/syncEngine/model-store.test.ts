@@ -138,102 +138,91 @@ describe('ModelStore', () => {
       expect(store.isReady).toBe(true);
     });
 
-    it('should render initial data correctly', () => {
-      const renderedData = store.render().sort(sortById);
-      const simpleDbData = simpleDb.getAll(sortById);
+    it('should correctly add to and update ground truth', async () => {
+      // 1. Test adding new items to ground truth
+      const newItems: TestItem[] = [
+        { id: 'new1', name: 'New Item 1', value: 1000 },
+        { id: 'new2', name: 'New Item 2', value: 2000 }
+      ];
       
-      expect(renderedData).toEqual(simpleDbData);
-      expect(renderedData).toHaveLength(3);
-    });
-
-    it('should add a create operation', async () => {
-      // Create a new item
-      const newItem: TestItem = { id: 'item4', name: 'Item 4', value: 400 };
-      
-      // Add to ModelStore via operation
-      store.addOperation(new Operation({
-        type: 'create',
-        instances: newItem
-      }));
-      
-      // Add to SimpleDB
-      simpleDb.create(newItem);
-      
-      // Small delay to allow IndexedDB operations to complete
+      // Add to ground truth and give time for persistence
+      store.addToGroundTruth(newItems);
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      // Compare results
-      const renderedData = store.render().sort(sortById);
-      const simpleDbData = simpleDb.getAll(sortById);
+      // Check items were added
+      expect(store.groundTruthArray).toHaveLength(5); // 3 original + 2 new
+      expect(store.groundTruthArray.find(item => item.id === 'new1')).toBeDefined();
+      expect(store.groundTruthArray.find(item => item.id === 'new2')).toBeDefined();
       
-      expect(renderedData).toEqual(simpleDbData);
-      expect(renderedData).toHaveLength(4);
-      expect(renderedData[3].id).toBe('item4');
+      // 2. Test updating existing items in ground truth
+      const updatedItems: TestItem[] = [
+        { id: 'item1', name: 'Updated Item 1', value: 150 },
+        { id: 'new1', name: 'Updated New Item 1', value: 1100 }
+      ];
       
-      // Verify that the operation was saved to storage
-      // We would need to fetch from IndexedDB to verify this, but that's challenging
-      // in the test environment without direct access to the DB contents
-    });
-
-    it('should add an update operation', async () => {
-      // Update an existing item
-      const updateItem: Partial<TestItem> & Pick<TestItem, 'id'> = { 
-        id: 'item2', 
-        name: 'Updated Item 2' 
-      };
-      
-      // Add to ModelStore via operation
-      store.addOperation(new Operation({
-        type: 'update',
-        instances: updateItem
-      }));
-      
-      // Add to SimpleDB
-      simpleDb.update(updateItem);
-      
-      // Small delay to allow IndexedDB operations to complete
+      // Update ground truth and give time for persistence
+      store.addToGroundTruth(updatedItems);
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      // Compare results
-      const renderedData = store.render().sort(sortById);
-      const simpleDbData = simpleDb.getAll(sortById);
+      // Check items were updated
+      expect(store.groundTruthArray).toHaveLength(5); // Still 5 items, no new ones added
       
-      expect(renderedData).toEqual(simpleDbData);
-      expect(renderedData[1].name).toBe('Updated Item 2');
-      expect(renderedData[1].value).toBe(200); // Value should remain unchanged
-    });
-
-    it('should add a delete operation', async () => {
-      // Delete an item
-      const deleteItem: Pick<TestItem, 'id'> = { id: 'item3' };
+      const updatedItem1 = store.groundTruthArray.find(item => item.id === 'item1');
+      expect(updatedItem1).toBeDefined();
+      expect(updatedItem1?.name).toBe('Updated Item 1');
+      expect(updatedItem1?.value).toBe(150);
       
-      // Add to ModelStore via operation
-      store.addOperation(new Operation({
-        type: 'delete',
-        instances: deleteItem
-      }));
+      const updatedNewItem1 = store.groundTruthArray.find(item => item.id === 'new1');
+      expect(updatedNewItem1).toBeDefined();
+      expect(updatedNewItem1?.name).toBe('Updated New Item 1');
+      expect(updatedNewItem1?.value).toBe(1100);
       
-      // Delete from SimpleDB
-      simpleDb.delete('item3');
+      // 3. Test partial updates to existing items
+      const partialUpdates: Partial<TestItem> & Pick<TestItem, 'id'>[] = [
+        { id: 'item2', name: 'Partially Updated Item 2' }, // Only updating name
+        { id: 'new2', value: 2222 } // Only updating value
+      ];
       
-      // Small delay to allow IndexedDB operations to complete
+      // Apply partial updates
+      store.addToGroundTruth(partialUpdates);
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      // Compare results
-      const renderedData = store.render().sort(sortById);
-      const simpleDbData = simpleDb.getAll(sortById);
+      // Check partial updates were applied correctly
+      const partiallyUpdatedItem2 = store.groundTruthArray.find(item => item.id === 'item2');
+      expect(partiallyUpdatedItem2).toBeDefined();
+      expect(partiallyUpdatedItem2?.name).toBe('Partially Updated Item 2');
+      expect(partiallyUpdatedItem2?.value).toBe(200); // Original value preserved
       
-      expect(renderedData).toEqual(simpleDbData);
-      expect(renderedData).toHaveLength(2);
-      expect(renderedData.find(item => item.id === 'item3')).toBeUndefined();
-    });
-  });
-
-  describe('Basic Operations', () => {
-    it('should initialize with the correct data', () => {
-      expect(store.groundTruthArray).toHaveLength(3);
-      expect(store.operations).toHaveLength(0);
-      expect(store.isReady).toBe(true);
+      const partiallyUpdatedNewItem2 = store.groundTruthArray.find(item => item.id === 'new2');
+      expect(partiallyUpdatedNewItem2).toBeDefined();
+      expect(partiallyUpdatedNewItem2?.name).toBe('New Item 2'); // Original name preserved
+      expect(partiallyUpdatedNewItem2?.value).toBe(2222);
+      
+      // 4. Verify render reflects all ground truth updates
+      const renderedData = store.render().sort(sortById);
+      expect(renderedData).toHaveLength(5);
+      
+      // All updated values should be reflected in render
+      expect(renderedData.find(item => item.id === 'item1')?.name).toBe('Updated Item 1');
+      expect(renderedData.find(item => item.id === 'item2')?.name).toBe('Partially Updated Item 2');
+      expect(renderedData.find(item => item.id === 'new1')?.name).toBe('Updated New Item 1');
+      expect(renderedData.find(item => item.id === 'new2')?.value).toBe(2222);
+      
+      // 5. Test handling empty array
+      store.addToGroundTruth([]);
+      expect(store.groundTruthArray).toHaveLength(5); // No change
+      
+      // 6. Test handling undefined values
+      const withUndefined = [
+        { id: 'new3', name: undefined, value: 3000 }
+      ];
+      store.addToGroundTruth(withUndefined);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      const undefinedItem = store.groundTruthArray.find(item => item.id === 'new3');
+      expect(undefinedItem).toBeDefined();
+      expect(undefinedItem?.name).toBeUndefined();
+      expect(undefinedItem?.value).toBe(3000);
     });
 
     it('should render initial data correctly', () => {

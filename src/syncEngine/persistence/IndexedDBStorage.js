@@ -110,6 +110,35 @@ export class IndexedDBStorage {
     }
 
     /**
+     * Load all data from IndexedDB with timeout
+     * @returns {Promise<Array>} All data objects in the store
+     */
+    async loadAll() {
+      if (this._isClosing) {
+        throw new Error('Cannot load during database close operation');
+      }
+      
+      this._operationCounter++;
+      try {
+        const db = await this._getDb();
+        
+        // Add timeout protection
+        const loadAllOperation = db.getAll(this.storeName);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("LoadAll operation timed out")), 5000)
+        );
+        
+        const allData = await Promise.race([loadAllOperation, timeoutPromise]);
+        return allData;
+      } catch (error) {
+        console.error("IDB LoadAll Error:", error);
+        throw error;
+      } finally {
+        this._operationCounter--;
+      }
+    }
+
+    /**
      * Delete data from IndexedDB with timeout
      */
     async delete(id) {

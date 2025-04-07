@@ -21,13 +21,17 @@ import { ValidationError } from './errors.js';
  * @abstract
  */
 export class Model {
+  // Private data store for all field values
+  #_data = {};
+
   /**
    * Creates a new Model instance.
    *
    * @param {any} [data={}] - The data for initialization.
    */
   constructor(data = {}) {
-    // The constructor doesnt need to do anything, as the data is assigned in the subclass constructor
+    // Initialize internal data store
+    this.#_data = {};
   }
 
   /**
@@ -37,7 +41,7 @@ export class Model {
    */
   get pk() {
     const ModelClass = this.constructor;
-    return this[ModelClass.primaryKeyField];
+    return this.#_data[ModelClass.primaryKeyField];
   }
 
   /**
@@ -47,7 +51,27 @@ export class Model {
    */
   set pk(value) {
     const ModelClass = this.constructor;
-    this[ModelClass.primaryKeyField] = value;
+    this.#_data[ModelClass.primaryKeyField] = value;
+  }
+
+  /**
+   * Gets a field value from the internal data store
+   * 
+   * @param {string} field - The field name
+   * @returns {any} The field value
+   */
+  getField(field) {
+    return this.#_data[field];
+  }
+
+  /**
+   * Sets a field value in the internal data store
+   * 
+   * @param {string} field - The field name
+   * @param {any} value - The field value to set
+   */
+  setField(field, value) {
+    this.#_data[field] = value;
   }
 
   /**
@@ -76,7 +100,6 @@ export class Model {
     }
   }
 
-
   /**
    * Serializes the model instance.
    *
@@ -86,7 +109,15 @@ export class Model {
    * @returns {Object} The serialized model data.
    */
   serialize() {
-    return { ...this };
+    const serialized = {};
+    const ModelClass = this.constructor;
+    
+    // Include all fields defined in the model
+    for (const field of ModelClass.fields) {
+      serialized[field] = this.getField(field);
+    }
+    
+    return serialized;
   }
 
   /**
@@ -104,7 +135,13 @@ export class Model {
         data: this.serialize()
       });
       const newInstance = new ModelClass(result.data);
-      Object.assign(this, newInstance);
+      
+      // Update all fields from the response
+      for (const field of ModelClass.fields) {
+        if (newInstance.getField(field) !== undefined) {
+          this.setField(field, newInstance.getField(field));
+        }
+      }
     } else {
       // Update existing instance
       const result = await ModelClass.objects.newQuerySet().executeQuery({
@@ -115,8 +152,15 @@ export class Model {
         },
         data: this.serialize()
       });
+      
       const newInstance = new ModelClass(result.data);
-      Object.assign(this, newInstance);
+      
+      // Update all fields from the response
+      for (const field of ModelClass.fields) {
+        if (newInstance.getField(field) !== undefined) {
+          this.setField(field, newInstance.getField(field));
+        }
+      }
     }
     
     return this;
@@ -165,6 +209,12 @@ export class Model {
     }
     const ModelClass = this.constructor;
     const fresh = await ModelClass.objects.get({ [ModelClass.primaryKeyField]: this.pk });
-    Object.assign(this, fresh);
+    
+    // Update all fields from the fresh instance
+    for (const field of ModelClass.fields) {
+      if (fresh.getField(field) !== undefined) {
+        this.setField(field, fresh.getField(field));
+      }
+    }
   }
 }

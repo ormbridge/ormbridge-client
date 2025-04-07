@@ -79,6 +79,7 @@
     "handlebars": "^4.7.8",
     "idb": "^8.0.2",
     "inquirer": "^12.4.2",
+    "lodash": "^4.17.21",
     "lodash-es": "^4.17.21",
     "mutative": "^1.1.0",
     "object-hash": "^3.0.0",
