@@ -82,7 +82,9 @@ import { MultipleObjectsReturned, DoesNotExist, parseORMBridgeError } from './er
 import { Model } from './model.js';
 import axios from 'axios';
 import { getConfig } from '../../config.js';
+import { processNormalized } from './processNormalized.js';
 import { denormalizeResponse } from './denormalizeResponse.js';
+import { json } from 'stream/consumers';
 
 /**
  * A QuerySet provides a fluent API for constructing and executing queries.
@@ -483,10 +485,10 @@ export class QuerySet {
     });
     
     if (Array.isArray(response.data)) {
-      return response.data.length ? new this.ModelClass(response.data[0]) : null;
+      return response.data.length ? this.ModelClass.from(response.data[0]) : null;
     }
     
-    return response.data ? new this.ModelClass(response.data) : null;
+    return response.data ? this.ModelClass.from(response.data) : null;
   }
 
   /**
@@ -510,10 +512,10 @@ export class QuerySet {
     });
     
     if (Array.isArray(response.data)) {
-      return response.data.length ? new this.ModelClass(response.data[response.data.length - 1]) : null;
+      return response.data.length ? this.ModelClass.from(response.data[response.data.length - 1]) : null;
     }
     
-    return response.data ? new this.ModelClass(response.data) : null;
+    return response.data ? this.ModelClass.from(response.data) : null;
   }
 
   /**
@@ -654,10 +656,10 @@ export class QuerySet {
       if (response.data.length === 0) {
         throw new DoesNotExist();
       }
-      return new this.ModelClass(response.data[0]);
+      return this.ModelClass.from(response.data[0]);
     }
     
-    return new this.ModelClass(response.data);
+    return this.ModelClass.from(response.data);
   }
 
   /**
@@ -726,7 +728,8 @@ export class QuerySet {
     
     try {
       const response = await axios.post(finalUrl, payload, { headers });
-      return denormalizeResponse(response.data);
+      let denormalized = denormalizeResponse(response.data);
+      return denormalized
     } catch (error) {
       if (error.response && error.response.data) {
         const parsedError = parseORMBridgeError(error.response.data);
@@ -784,7 +787,7 @@ export class QuerySet {
       type: 'read'
     });
     
-    const results = response.data.map(item => new this.ModelClass(item));
+    const results = response.data.map(item => this.ModelClass.from(item));
     
     return results;
   }

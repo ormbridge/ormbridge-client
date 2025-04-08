@@ -53,6 +53,7 @@ export class Model {
   static from(data) {
     // this is the concrete model class (e.g., Product)
     modelStoreRegistry.setEntity(this, data[this.primaryKeyField], data);
+    let verify = modelStoreRegistry.getEntity(this, data[this.primaryKeyField])
     const instance = new this();
     instance.#_pk = data[this.primaryKeyField];
     return instance;
@@ -81,8 +82,8 @@ export class Model {
     let value = this.#_data[field];
     // if its not been overridden, get it from the store
     if (isNil(value) && !isNil(this.#_pk)){
-      let storedValue = modelStoreRegistry.getEntity(this, this.#_pk)?.[field]
-      if (storedValue) value = storedValue; // if stops null -> undefined
+      let storedValue = modelStoreRegistry.getEntity(ModelClass, this.#_pk)
+      if (storedValue) value = storedValue[field]; // if stops null -> undefined
     }
 
     // relationship fields need special handling
@@ -135,6 +136,7 @@ export class Model {
    * @throws {ValidationError} If an unknown key is found.
    */
   static validateFields(data) {
+    if (isNil(data)) return;
     const allowedFields = this.fields;
     
     for (const key of Object.keys(data)) {
