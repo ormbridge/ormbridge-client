@@ -33,5 +33,5 @@ class ModelStoreRegistry {
     }
   }
   
-  // Export singleton instance
-  export const modelStoreRegistry = new ModelStoreRegistry();
+// Export singleton instance
+export const modelStoreRegistry = new ModelStoreRegistry();

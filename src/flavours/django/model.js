@@ -23,6 +23,7 @@ import { ValidationError } from './errors.js';
 export class Model {
   // Private data store for all field values
   #_data = {};
+  #_pk = undefined;
 
   /**
    * Creates a new Model instance.
@@ -32,6 +33,7 @@ export class Model {
   constructor(data = {}) {
     // Initialize internal data store
     this.#_data = {};
+    this.#_pk = null
   }
 
   /**
@@ -40,8 +42,19 @@ export class Model {
    * @returns {number|undefined} The primary key.
    */
   get pk() {
-    const ModelClass = this.constructor;
-    return this.#_data[ModelClass.primaryKeyField];
+    return this.#_pk
+  }
+
+  /**
+   * Instantiate a model via the global registry rather than with local data
+   */
+  static from(data) {
+    // this is the concrete model class (e.g., Product)
+    modelStoreRegistry.setEntity(this, data[this.primaryKeyField], data);
+  
+    const instance = new this();
+    instance.#_pk = data[this.primaryKeyField];
+    return instance;
   }
 
   /**
@@ -50,8 +63,7 @@ export class Model {
    * @param {number|undefined} value - The new primary key value.
    */
   set pk(value) {
-    const ModelClass = this.constructor;
-    this.#_data[ModelClass.primaryKeyField] = value;
+    this.#_pk = value
   }
 
   /**
@@ -61,6 +73,8 @@ export class Model {
    * @returns {any} The field value
    */
   getField(field) {
+    const ModelClass = this.constructor
+    if (ModelClass.primaryKeyField === field) return this.#_pk;
     return this.#_data[field];
   }
 
@@ -71,7 +85,12 @@ export class Model {
    * @param {any} value - The field value to set
    */
   setField(field, value) {
-    this.#_data[field] = value;
+    const ModelClass = this.constructor
+    if (ModelClass.primaryKeyField === field){
+      this.#_pk = value
+    } else {
+      this.#_data[field] = value;
+    }
   }
 
   /**
