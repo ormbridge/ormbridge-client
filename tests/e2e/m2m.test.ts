@@ -5,6 +5,7 @@ import { DeepModelLevel3 } from '../../models/backend1/django_app/deepmodellevel
 import { ComprehensiveModel } from '../../models/backend1/django_app/comprehensivemodel';
 import { setBackendConfig } from '../../src/config';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader';
+import { modelStoreRegistry } from '../../src/syncEngine/registries/modelStoreRegistry';
 
 describe('Many-to-Many Field Selection Tests', () => {
   let originalConfig: any;
@@ -61,6 +62,8 @@ describe('Many-to-Many Field Selection Tests', () => {
     const level2 = await DeepModelLevel2.objects.create({ name: 'Level2Test', level3: level3.pk });
     const level1 = await DeepModelLevel1.objects.create({ name: 'Test M2M', level2: level2.pk, comprehensive_models: [comp1, comp2] });
     
+    modelStoreRegistry.clear() // need to clear to avoid the cache being available
+
     // Retrieve the instance using selective fields. Here we select:
     // - The top-level "name" field.
     // - For each related comprehensive model, only "char_field" and "int_field".

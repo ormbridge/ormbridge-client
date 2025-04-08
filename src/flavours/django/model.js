@@ -79,8 +79,8 @@ export class Model {
     // check local overrides
     let value = this.#_data[field];
     // if its not been overridden, get it from the store
-    if (!value){
-      let storedValue = modelStoreRegistry.getEntity(this, this.pk)?.[field]
+    if (!value && this.#_pk){
+      let storedValue = modelStoreRegistry.getEntity(this, this.#_pk)?.[field]
       if (storedValue) value = storedValue; // if stops null -> undefined
     }
 
@@ -103,7 +103,7 @@ export class Model {
         case 'foreign-key':
           // set the value to the full model object
           value = value[relPkField] || value
-          value = modelStoreRegistry.getEntity(fieldInfo.ModelClass, value) || new fieldInfo.ModelClass({[relPkField]: value})
+          if (value) value = modelStoreRegistry.getEntity(fieldInfo.ModelClass, value) || {[relPkField]: value}
           break
       }
     }

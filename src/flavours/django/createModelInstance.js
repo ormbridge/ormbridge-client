@@ -28,7 +28,6 @@ export function createModelInstance(ModelClass, data) {
 
   // For full objects, store them in the registry
   if (data[pkField]) {
-    console.log(`storing data: ${JSON.stringify(data)} to pk: ${data[pkField]}`)
     modelStoreRegistry.setEntity(ModelClass, data[pkField], data);
     return data[pkField];
   }

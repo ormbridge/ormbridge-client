@@ -4,6 +4,10 @@ class ModelStoreRegistry {
     constructor() {
       this._stores = new Map();
     }
+
+    clear(){
+      this._stores = new Map();
+    }
   
     getStore(modelClass) {
       const key = `${modelClass.configKey}::${modelClass.modelName}`;
@@ -21,7 +25,9 @@ class ModelStoreRegistry {
   
     // Get a single entity from the store
     getEntity(modelClass, pk) {
-      if (pk[modelClass.primaryKeyField]) throw new Error(`getEntity expects pk but got ${JSON.stringify(pk)} of type ${typeof pk}`)
+      if (!modelClass) throw new Error("modelClass is required")
+      if (!pk) throw new Error("pk is required")
+      if (pk[modelClass.primaryKeyField]) throw new Error("getEntity should be called with a pk")
       const store = this.getStore(modelClass);
       const renderedData = store.render([pk]);
       return renderedData[0] || null;
@@ -29,6 +35,9 @@ class ModelStoreRegistry {
   
     // Add or update an entity in the store
     setEntity(modelClass, pk, data) {
+      if (!modelClass) throw new Error("modelClass is required")
+      if (!pk) throw new Error("pk is required")
+      if (!pk) return;
       const store = this.getStore(modelClass);
       store.addToGroundTruth([data]);
       return data;
