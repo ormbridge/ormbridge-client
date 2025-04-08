@@ -26,8 +26,8 @@ class ModelStoreRegistry {
   
     // Get a single entity from the store
     getEntity(modelClass, pk) {
-      if (!modelClass) throw new Error("modelClass is required")
-      if (!pk) throw new Error("pk is required")
+      if (!isNil(modelClass)) throw new Error("modelClass is required")
+      if (!isNil(pk)) throw new Error("pk is required")
       if (pk[modelClass.primaryKeyField]) throw new Error("getEntity should be called with a pk")
       const store = this.getStore(modelClass);
       const renderedData = store.render([pk]);
@@ -36,9 +36,9 @@ class ModelStoreRegistry {
   
     // Add or update an entity in the store
     setEntity(modelClass, pk, data) {
-      if (!modelClass) throw new Error("modelClass is required")
-      if (!pk) throw new Error("pk is required")
-      if (!pk) return;
+      if (!isNil(modelClass)) throw new Error("modelClass is required")
+      if (!isNil(pk)) throw new Error("pk is required")
+      if (!isNil(pk)) return;
       const store = this.getStore(modelClass);
       store.addToGroundTruth([data]);
       return data;
