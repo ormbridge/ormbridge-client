@@ -157,11 +157,11 @@ export class {{className}} extends Model {
   static objects = new {{className}}Manager({{className}});
   static fields = [{{#each properties}}'{{name}}'{{#unless @last}}, {{/unless}}{{/each}}];
   static schema = schemaData;
-  static relationship_fields = [
+  static relationshipFields = new Map([
     {{#each relationshipFields}}
-    { field: '{{field}}', ModelClass: {{ModelClass}}, relationshipType: '{{relationshipType}}' }{{#unless @last}},{{/unless}}
+    ['{{field}}', { 'ModelClass': {{ModelClass}}, 'relationshipType': '{{relationshipType}}' }]{{#unless @last}},{{/unless}}
     {{/each}}
-  ];
+  ]);
 
   constructor(data) {
     {{className}}.validateFields(data);
@@ -287,10 +287,14 @@ export interface {{interfaceName}} {
  * Relationship field structure
  */
 export interface RelationshipField {
-  field: string;
   ModelClass: any;
   relationshipType: string;
 }
+
+/**
+ * Relationship fields map type
+ */
+export type RelationshipFieldsMap = Map<string, RelationshipField>;
 
 /**
  * Type for creating new instances
@@ -472,7 +476,7 @@ export declare class {{className}} extends Model implements {{interfaceName}} {
   static configKey: string;
   static modelName: string;
   static primaryKeyField: string;
-  static relationship_fields: RelationshipField[];
+  static relationshipFields: RelationshipFieldsMap;
   
   // Use model-specific manager class instead of generic manager
   static objects: {{className}}Manager;

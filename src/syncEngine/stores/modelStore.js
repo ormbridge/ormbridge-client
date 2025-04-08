@@ -214,8 +214,10 @@ export class ModelStore {
     }
 
     render(pks = null) {
-        const renderedInstancesMap = this._filteredGroundTruth(pks, this.groundTruthArray);
-        const relevantOperations = this._filteredOperations(pks, this.operations);
+        const pksSet = pks === null ? null : 
+                  (pks instanceof Set ? pks : new Set(Array.isArray(pks) ? pks : [pks]));
+        const renderedInstancesMap = this._filteredGroundTruth(pksSet, this.groundTruthArray);
+        const relevantOperations = this._filteredOperations(pksSet, this.operations);
 
         for (const op of relevantOperations) {
             if (op.status !== 'rejected') {
