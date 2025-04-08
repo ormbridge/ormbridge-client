@@ -26,9 +26,11 @@ class ModelStoreRegistry {
   
     // Get a single entity from the store
     getEntity(modelClass, pk) {
-      if (!isNil(modelClass)) throw new Error("modelClass is required")
-      if (!isNil(pk)) throw new Error("pk is required")
+      // defensive checks for this nested func
+      if (isNil(modelClass) || isNil(pk)) return;
       if (pk[modelClass.primaryKeyField]) throw new Error("getEntity should be called with a pk")
+      
+      // logic
       const store = this.getStore(modelClass);
       const renderedData = store.render([pk]);
       return renderedData[0] || null;
@@ -36,9 +38,11 @@ class ModelStoreRegistry {
   
     // Add or update an entity in the store
     setEntity(modelClass, pk, data) {
-      if (!isNil(modelClass)) throw new Error("modelClass is required")
-      if (!isNil(pk)) throw new Error("pk is required")
-      if (!isNil(pk)) return;
+      // defensive checks for this nested func
+      if (isNil(modelClass) || isNil(pk)) return;
+      if (pk[modelClass.primaryKeyField]) throw new Error("getEntity should be called with a pk")
+      
+      // logic
       const store = this.getStore(modelClass);
       store.addToGroundTruth([data]);
       return data;
