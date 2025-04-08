@@ -116,7 +116,6 @@ export class QuerySet {
     this._initialQueryset = config.initialQueryset;
     this._serializerOptions = config.serializerOptions || {};
     this._materialized = config.materialized || false;
-    this._parent = parent
   }
 
   /**
@@ -135,7 +134,7 @@ export class QuerySet {
       initialQueryset: this._initialQueryset,
       serializerOptions: { ...this._serializerOptions },
       materialized: this._materialized,
-    }, this._parent);
+    });
   }
 
   /**
