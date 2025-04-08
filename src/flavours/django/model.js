@@ -2,6 +2,7 @@ import { Manager } from './manager.js';
 import { getConfig } from '../../config.js';
 import { ValidationError } from './errors.js';
 import { modelStoreRegistry } from '../../syncEngine/registries/modelStoreRegistry.js';
+import { isNil } from 'lodash-es';
 
 /**
  * A constructor for a Model.
@@ -79,7 +80,7 @@ export class Model {
     // check local overrides
     let value = this.#_data[field];
     // if its not been overridden, get it from the store
-    if (!value && this.#_pk){
+    if (isNil(value) && !isNil(this.#_pk)){
       let storedValue = modelStoreRegistry.getEntity(this, this.#_pk)?.[field]
       if (storedValue) value = storedValue; // if stops null -> undefined
     }
@@ -103,7 +104,7 @@ export class Model {
         case 'foreign-key':
           // set the value to the full model object
           value = value[relPkField] || value
-          if (value) value = modelStoreRegistry.getEntity(fieldInfo.ModelClass, value) || {[relPkField]: value}
+          if (!isNil(value)) value = modelStoreRegistry.getEntity(fieldInfo.ModelClass, value) || new fieldInfo.ModelClass({[relPkField]: value})
           break
       }
     }
