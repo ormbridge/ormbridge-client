@@ -14,7 +14,6 @@ class ModelStoreRegistry {
             [`${modelClass.primaryKeyField}__in`]: pks
           }).fetch();
         };
-        
         this._stores.set(key, new ModelStore(modelClass, fetchModels, [], []));
       }
       return this._stores.get(key);
@@ -22,6 +21,7 @@ class ModelStoreRegistry {
   
     // Get a single entity from the store
     getEntity(modelClass, pk) {
+      if (pk[modelClass.primaryKeyField]) throw new Error(`getEntity expects pk but got ${JSON.stringify(pk)} of type ${typeof pk}`)
       const store = this.getStore(modelClass);
       const renderedData = store.render([pk]);
       return renderedData[0] || null;

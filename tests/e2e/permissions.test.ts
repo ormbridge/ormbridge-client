@@ -349,6 +349,7 @@ describe('Permission and Custom PK Tests (non-admin user)', () => {
       instance.name = 'Updated Relation';
       const updated = await instance.save();
       expect(updated.name).toBe('Updated Relation');
+      console.log(`Updated: ${JSON.stringify(updated)}`)
       // The summary representation returns the relation field, so verify it remains unchanged.
       if (typeof updated.custom_pk_related === 'object') {
         expect(updated.custom_pk_related.custom_pk).toBe(customPKInstance.custom_pk);

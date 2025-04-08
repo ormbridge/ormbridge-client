@@ -78,7 +78,6 @@ export class Model {
     
     // check local overrides
     let value = this.#_data[field];
-
     // if its not been overridden, get it from the store
     if (!value){
       let storedValue = modelStoreRegistry.getEntity(this, this.pk)?.[field]
@@ -89,17 +88,22 @@ export class Model {
     if (ModelClass.relationshipFields.has(field) && value){
       // fetch the stored value
       let fieldInfo = ModelClass.relationshipFields.get(field)
+      let relPkField = fieldInfo.ModelClass.primaryKeyField
       switch (fieldInfo.relationshipType){
         case 'many-to-many':
           // value is an array
           if (!Array.isArray(value) && value) throw new Error(`Data corruption: m2m field for ${ModelClass.modelName} stored as ${value}`)
           // set each pk to the full model object for that pk
-          value = value.map(pk => modelStoreRegistry.getEntity(fieldInfo.ModelClass, pk) || new fieldInfo.ModelClass({[fieldInfo.ModelClass.primaryKeyField]: pk}))
+          value = value.map(pkOrObj =>
+            modelStoreRegistry.getEntity(fieldInfo.ModelClass, pkOrObj[relPkField] || pkOrObj)
+            || new fieldInfo.ModelClass({[relPkField]: pkOrObj}
+            ))
           break
         case 'one-to-one':
         case 'foreign-key':
           // set the value to the full model object
-          value = modelStoreRegistry.getEntity(fieldInfo.ModelClass, value) || new fieldInfo.ModelClass({[fieldInfo.ModelClass.primaryKeyField]: value})
+          value = value[relPkField] || value
+          value = modelStoreRegistry.getEntity(fieldInfo.ModelClass, value) || new fieldInfo.ModelClass({[relPkField]: value})
           break
       }
     }
