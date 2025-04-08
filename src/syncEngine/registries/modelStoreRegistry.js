@@ -1,3 +1,5 @@
+import { ModelStore } from '../stores/modelStore';
+
 class ModelStoreRegistry {
     constructor() {
       this._stores = new Map();

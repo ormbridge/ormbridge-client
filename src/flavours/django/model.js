@@ -1,6 +1,7 @@
 import { Manager } from './manager.js';
 import { getConfig } from '../../config.js';
 import { ValidationError } from './errors.js';
+import { modelStoreRegistry } from '../../syncEngine/registries/modelStoreRegistry.js';
 
 /**
  * A constructor for a Model.
@@ -51,7 +52,6 @@ export class Model {
   static from(data) {
     // this is the concrete model class (e.g., Product)
     modelStoreRegistry.setEntity(this, data[this.primaryKeyField], data);
-  
     const instance = new this();
     instance.#_pk = data[this.primaryKeyField];
     return instance;
@@ -75,7 +75,16 @@ export class Model {
   getField(field) {
     const ModelClass = this.constructor
     if (ModelClass.primaryKeyField === field) return this.#_pk;
-    return this.#_data[field];
+    
+    // check local overrides
+    let value = this.#_data[field];
+
+    // if its not been overridden, try from the store
+    if (!value){
+      let storedValue = modelStoreRegistry.getEntity(this, this.pk)?.[field]
+      if (storedValue) value = storedValue; // if stops null -> undefined
+    }
+    return value
   }
 
   /**
