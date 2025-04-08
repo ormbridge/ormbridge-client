@@ -73,6 +73,10 @@ export class ModelStore {
         this.groundTruthArray = Array.isArray(groundTruth) ? groundTruth : [];
     }
 
+    getGroundTruth(){
+        return this.groundTruthArray
+    }
+
     get groundTruthPks() {
         const pk = this.pkField;
         return this.groundTruthArray
@@ -225,30 +229,22 @@ export class ModelStore {
 
     async sync() {
         const storeIdForLog = this.modelClass.modelName;
-        if (this.isSyncing) {
-            console.warn(`[ModelStore ${storeIdForLog}] Already syncing, sync request ignored.`);
-            return;
-        }
+        if (this.isSyncing) return;
         this.isSyncing = true;
-        console.log(`[ModelStore ${storeIdForLog}] Starting sync...`);
 
         try {
             const currentPks = this.groundTruthPks;
             if (currentPks.length === 0) {
-                 console.log(`[ModelStore ${storeIdForLog}] No ground truth PKs to sync. Skipping fetch.`);
                  const trimmedOps = this.getTrimmedOperations();
                  this.setOperations(trimmedOps);
                  return;
             }
 
             const newGroundTruth = await this.fetchFn({ pks: currentPks, modelClass: this.modelClass });
-
             this.addToGroundTruth(newGroundTruth);
-
+            
             const trimmedOps = this.getTrimmedOperations();
             this.setOperations(trimmedOps);
-
-            console.log(`[ModelStore ${storeIdForLog}] Sync completed.`);
 
         } catch (error) {
             console.error(`[ModelStore ${storeIdForLog}] Failed to sync ground truth:`, error);

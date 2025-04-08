@@ -36,7 +36,6 @@ import {
   import { Manager, ResultTuple } from './flavours/django/manager.js';
   import { Model } from './flavours/django/model.js';
   import { createModelInstance } from './flavours/django/createModelInstance.js';
-  import { ModelSummary } from './flavours/django/modelSummary.js';
   
   // Configuration
   import {
@@ -82,7 +81,6 @@ import {
     ResultTuple,
     Model,
     createModelInstance,
-    ModelSummary,
     
     // Configuration
     setConfig,
