@@ -243,7 +243,7 @@ export class ModelStore {
             }
 
             const newGroundTruth = await this.fetchFn({ pks: currentPks, modelClass: this.modelClass });
-            this.addToGroundTruth(newGroundTruth);
+            this.setGroundTruth(newGroundTruth);
             
             const trimmedOps = this.getTrimmedOperations();
             this.setOperations(trimmedOps);

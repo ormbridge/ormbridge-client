@@ -36,7 +36,7 @@ class ModelStoreRegistry {
       return renderedData[0] || null;
     }
   
-    // Add or update an entity in the store
+    // Add or update an entity ground truth in the store, not for operations!
     setEntity(modelClass, pk, data) {
       // defensive checks for this nested func
       if (isNil(modelClass) || isNil(pk)) return;
