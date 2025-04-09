@@ -49,7 +49,7 @@ export function processNormalized(response, ModelClass) {
     if (data.id !== undefined) {
       processedData = ModelClass.from(data).serialize();
     }
-    return { ...processedData, metadata: data.metadata }
+    return { data: processedData, metadata: data.metadata }
   }
   
   // Fallback to returning the original data

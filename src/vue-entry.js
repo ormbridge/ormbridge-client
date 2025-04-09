@@ -7,19 +7,6 @@ import {
     setNamespaceResolver
   } from './core/eventReceivers.js';
   
-  // Core live view
-  import {
-    LiveQuerySet,
-    liveView,
-    legacyLiveView,
-    handleModelEvent,
-    liveQueryRegistry,
-    activeOperationIds,
-    generateOperationId,
-    withOperationId,
-    defaultNamespaceResolver
-  } from './core/liveView.js';
-  
   // Django flavor modules
   import { Q } from './flavours/django/q.js';
   import {
@@ -57,17 +44,6 @@ import {
     setEventReceiver,
     getEventReceiver,
     setNamespaceResolver,
-    
-    // Core live view
-    LiveQuerySet,
-    liveView,
-    legacyLiveView,
-    handleModelEvent,
-    liveQueryRegistry,
-    activeOperationIds,
-    generateOperationId,
-    withOperationId,
-    defaultNamespaceResolver,
     
     // Django flavor modules
     Q,
