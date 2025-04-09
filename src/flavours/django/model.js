@@ -53,7 +53,6 @@ export class Model {
   static from(data) {
     // this is the concrete model class (e.g., Product)
     modelStoreRegistry.setEntity(this, data[this.primaryKeyField], data);
-    let verify = modelStoreRegistry.getEntity(this, data[this.primaryKeyField])
     const instance = new this();
     instance.#_pk = data[this.primaryKeyField];
     return instance;
@@ -98,14 +97,13 @@ export class Model {
           // set each pk to the full model object for that pk
           value = value.map(pkOrObj =>
             modelStoreRegistry.getEntity(fieldInfo.ModelClass, pkOrObj[relPkField] || pkOrObj)
-            || new fieldInfo.ModelClass({[relPkField]: pkOrObj}
-            ))
+            || {[relPkField]: pkOrObj})
           break
         case 'one-to-one':
         case 'foreign-key':
           // set the value to the full model object
           value = value[relPkField] || value
-          if (!isNil(value)) value = modelStoreRegistry.getEntity(fieldInfo.ModelClass, value) || new fieldInfo.ModelClass({[relPkField]: value})
+          if (!isNil(value)) value = modelStoreRegistry.getEntity(fieldInfo.ModelClass, value) || {[relPkField]: value}
           break
       }
     }
@@ -188,14 +186,7 @@ export class Model {
         type: 'create',
         data: this.serialize()
       });
-      const newInstance = new ModelClass(result.data);
-      
-      // Update all fields from the response
-      for (const field of ModelClass.fields) {
-        if (newInstance.getField(field) !== undefined) {
-          this.setField(field, newInstance.getField(field));
-        }
-      }
+      const newInstance = ModelClass.from(result.data);
     } else {
       // Update existing instance
       const result = await ModelClass.objects.newQuerySet().executeQuery({
@@ -207,14 +198,7 @@ export class Model {
         data: this.serialize()
       });
       
-      const newInstance = new ModelClass(result.data);
-      
-      // Update all fields from the response
-      for (const field of ModelClass.fields) {
-        if (newInstance.getField(field) !== undefined) {
-          this.setField(field, newInstance.getField(field));
-        }
-      }
+      const newInstance = ModelClass.from(result.data);
     }
     
     return this;
