@@ -118,7 +118,6 @@ const JS_MODEL_TEMPLATE = `/**
 
 import _ from 'lodash-es';
 import { Model, Manager, QuerySet } from '{{modulePath}}';
-import { createModelInstance } from '{{modulePath}}';
 import schemaData from './{{className}}.schema.json';
 {{#if jsImports}}
 {{#each jsImports}}
@@ -195,53 +194,33 @@ export class {{className}} extends Model {
   }
   
   /**
-   * Initialize all fields from the provided data
+   * Initialize all fields from the provided data.
+   * Relationship fields will be initialized with their raw values (e.g., IDs).
    * @private
    * @param {Object} data - The data for initialization
    */
   _initializeFields(data) {
     if (!data) return;
     
+    // Simply assign the value from data to the corresponding field
+    // No special handling or instantiation for relationships here.
 {{#each properties}}
-  {{#if isRelationship}}
-    {{#if isArrayRelationship}}
-    // Initialize array relationship field
-    if (data.{{name}}) {
-      this.{{name}} = data.{{name}}.map(item => createModelInstance({{relationshipClassName}}, item));
-    } else {
-      this.{{name}} = data.{{name}};
-    }
-    {{else}}
-    // Initialize single relationship field
-    if (data.{{name}}) {
-      this.{{name}} = createModelInstance({{relationshipClassName}}, data.{{name}});
-    } else {
-      this.{{name}} = data.{{name}};
-    }
-    {{/if}}
-  {{else}}
     this.{{name}} = data.{{name}};
-  {{/if}}
 {{/each}}
   }
 
-  // Serialize only the allowed fields
+  /**
+   * Serialize the model's data.
+   * Returns a plain object containing the current values of all fields,
+   * including raw IDs for relationship fields.
+   * @returns {Object}
+   */
   serialize() {
     const data = {};
+    // Simply assign the current value of each field.
+    // No special handling or PK extraction for relationships here.
     {{#each properties}}
-      {{#if isRelationship}}
-        {{#if isArrayRelationship}}
-    // For array relationships (many-to-many)
-    data.{{name}} = this.{{name}} 
-      ? this.{{name}}.map(item => item?.['{{relationshipPrimaryKeyField}}'] || item)
-      : this.{{name}};
-        {{else}}
-    // For single relationships
-    data.{{name}} = this.{{name}}?.['{{relationshipPrimaryKeyField}}'] || this.{{name}};
-        {{/if}}
-      {{else}}
     data.{{name}} = this.{{name}};
-      {{/if}}
     {{/each}}
     return data;
   }

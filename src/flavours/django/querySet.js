@@ -718,7 +718,7 @@ export class QuerySet {
     const payload = { 
       ast: { 
         query: restOfQuery,
-        serializerOptions 
+        serializerOptions
       } 
     };
     
