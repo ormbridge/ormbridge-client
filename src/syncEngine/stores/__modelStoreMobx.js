@@ -1,12 +1,11 @@
 import { Operation } from './operation.js';
-import { makeObservable, observable, action, computed, reaction } from 'mobx';
+import { makeObservable, observable, action, computed, runInAction } from 'mobx';
 import { computedFn } from 'mobx-utils';
-
-export const stateZeroEmitter = new EventTarget();
 
 export class ModelStore {
     modelClass;
     fetchFn;
+
     groundTruthArray;
     operations;
     isSyncing;
@@ -19,26 +18,51 @@ export class ModelStore {
     ) {
         this.modelClass = modelClass;
         this.fetchFn = fetchFn;
-        this.isSyncing = false;
 
-        this.groundTruthArray = initialGroundTruth ? initialGroundTruth : [];
-        this.operations = initialOperations ? initialOperations.map(opData => new Operation(opData)) : [];
+        this.isSyncing = false;
+        this.groundTruthArray = initialGroundTruth ? initialGroundTruth.slice() : [];
+        this.operations = initialOperations
+            ? initialOperations.map(opData => opData instanceof Operation ? opData : new Operation(opData))
+            : [];
+
+        makeObservable(this, {
+            groundTruthArray: observable.deep,
+            operations: observable.deep,
+            isSyncing: observable,
+
+            addOperation: action,
+            updateOperation: action,
+            confirm: action,
+            reject: action,
+            setOperations: action,
+            setGroundTruth: action,
+            addToGroundTruth: action,
+            sync: action,
+
+            pkField: computed,
+            groundTruthPks: computed,
+        });
+        
+        // Bind the render method directly to a computed function
+        this.render = computedFn(this._renderImplementation.bind(this), {
+            keepAlive: false
+        });
     }
 
     get pkField() {
         return this.modelClass.primaryKeyField;
     }
 
-    // commit optimistic updates
-
     addOperation(operation) {
-        this.operations.push(operation);
+        const opInstance = operation instanceof Operation ? operation : new Operation(operation);
+        this.operations.push(opInstance);
     }
 
     updateOperation(operation) {
-        let existingIndex = this.operations.findIndex(op => op.operationId === operation.operationId);
+        const opInstance = operation instanceof Operation ? operation : new Operation(operation);
+        let existingIndex = this.operations.findIndex(op => op.operationId === opInstance.operationId);
         if (existingIndex !== -1) {
-             this.operations[existingIndex] = operation;
+             this.operations[existingIndex] = opInstance;
              return true;
         }
         return false;
@@ -68,17 +92,18 @@ export class ModelStore {
     }
 
     setOperations(operations) {
-        this.operations = Array.isArray(operations) ? operations : [];
+        const opInstances = Array.isArray(operations)
+            ? operations.map(opData => opData instanceof Operation ? opData : new Operation(opData))
+            : [];
+        this.operations.replace(opInstances);
     }
 
-    // ground truth data
-
     setGroundTruth(groundTruth) {
-        this.groundTruthArray = Array.isArray(groundTruth) ? groundTruth : [];
+        this.groundTruthArray.replace(Array.isArray(groundTruth) ? groundTruth.slice() : []);
     }
 
     getGroundTruth(){
-        return this.groundTruthArray
+        return this.groundTruthArray;
     }
 
     get groundTruthPks() {
@@ -104,26 +129,31 @@ export class ModelStore {
 
         if (pkMap.size === 0) return;
 
-        const updatedGroundTruth = [];
         const processedPks = new Set();
 
-        for (const existingItem of this.groundTruthArray) {
-             if (!existingItem || typeof existingItem !== 'object' || !(pkField in existingItem)) {
-                continue;
+        this.groundTruthArray.forEach((existingItem) => {
+            if (!existingItem || typeof existingItem !== 'object' || !(pkField in existingItem)) {
+                return;
             }
-
             const pk = existingItem[pkField];
             if (pkMap.has(pk)) {
-                updatedGroundTruth.push({ ...existingItem, ...pkMap.get(pk) });
+                Object.assign(existingItem, pkMap.get(pk));
                 processedPks.add(pk);
-                pkMap.delete(pk);
-            } else {
-                updatedGroundTruth.push(existingItem);
+            }
+        });
+
+        const newItems = [];
+        for (const [pk, item] of pkMap.entries()) {
+            if (!processedPks.has(pk)) {
+                 if (!this.groundTruthArray.some(existing => existing && existing[pkField] === pk)) {
+                    newItems.push(item);
+                 }
             }
         }
 
-        updatedGroundTruth.push(...Array.from(pkMap.values()));
-        this.groundTruthArray = updatedGroundTruth;
+        if (newItems.length > 0) {
+            this.groundTruthArray.push(...newItems);
+        }
     }
 
     _filteredOperations(pks, operations) {
@@ -150,11 +180,11 @@ export class ModelStore {
         let groundTruthMap = new Map();
 
         for (const instance of groundTruthArray) {
-            if (!instance || typeof instance !== 'object' || !(pkField in instance)) {
+             if (!instance || typeof instance !== 'object' || !(pkField in instance)) {
                 continue;
             }
             const pk = instance[pkField];
-            if (!pks || pks.has(pk)) {
+            if (pks === null || pks.has(pk)) {
                 groundTruthMap.set(pk, instance);
             }
         }
@@ -165,8 +195,8 @@ export class ModelStore {
         const pkField = this.pkField;
         for (const instance of operation.instances) {
              if (!instance || typeof instance !== 'object' || !(pkField in instance)) {
-                console.warn(`[ModelStore ${this.modelClass.modelName}] Skipping instance in operation ${operation.operationId} during applyOperation due to missing PK field '${String(pkField)}' or invalid format.`);
-                continue;
+                 console.warn(`[ModelStore ${this.modelClass.modelName}] Skipping instance in operation ${operation.operationId} during applyOperation due to missing PK field '${String(pkField)}' or invalid format.`);
+                 continue;
             }
             const pk = instance[pkField];
 
@@ -209,7 +239,6 @@ export class ModelStore {
                      console.error(`[ModelStore ${this.modelClass.modelName}] Unknown operation type: ${operation.type}`);
             }
         }
-        return currentInstances;
     }
 
     getTrimmedOperations() {
@@ -217,11 +246,10 @@ export class ModelStore {
         return this.operations.filter(operation => operation.timestamp > twoMinutesAgo);
     }
 
-    // caching - store the render result, with the pks used to generate it in a cache
-
-    render(pks = null) {
-        const pksSet = pks === null ? null : 
+    _renderImplementation(pks = null) {
+        const pksSet = pks === null ? null :
                   (pks instanceof Set ? pks : new Set(Array.isArray(pks) ? pks : [pks]));
+
         const renderedInstancesMap = this._filteredGroundTruth(pksSet, this.groundTruthArray);
         const relevantOperations = this._filteredOperations(pksSet, this.operations);
 
@@ -232,16 +260,23 @@ export class ModelStore {
         }
         return Array.from(renderedInstancesMap.values());
     }
-
-    // syncing with the server
+    
+    // render is now assigned in the constructor as a computed function
 
     async sync() {
         const storeIdForLog = this.modelClass.modelName;
-        if (this.isSyncing) return;
-        this.isSyncing = true;
+
+        if (this.isSyncing) {
+            return;
+        }
+
+        runInAction(() => {
+            this.isSyncing = true;
+        });
 
         try {
             const currentPks = this.groundTruthPks;
+
             if (currentPks.length === 0) {
                  const trimmedOps = this.getTrimmedOperations();
                  this.setOperations(trimmedOps);
@@ -249,15 +284,20 @@ export class ModelStore {
             }
 
             const newGroundTruth = await this.fetchFn({ pks: currentPks, modelClass: this.modelClass });
-            this.setGroundTruth(newGroundTruth);
-            
+
             const trimmedOps = this.getTrimmedOperations();
-            this.setOperations(trimmedOps);
+
+            runInAction(() => {
+                this.setGroundTruth(newGroundTruth);
+                this.setOperations(trimmedOps);
+            });
 
         } catch (error) {
             console.error(`[ModelStore ${storeIdForLog}] Failed to sync ground truth:`, error);
         } finally {
-             this.isSyncing = false;
+             runInAction(() => {
+                this.isSyncing = false;
+            });
         }
     }
 }

@@ -171,35 +171,118 @@ export function getNumericValues(data, field) {
     }
   }
   
+/**
+ * Returns the optimistic update strategy for a given metric. Allows the developer to override
+ * the optimistic update strategy for a specific metric or metric/model combination
+ */
+export class MetricStrategyFactory {
+  // Collection of custom strategy overrides
+  static #customStrategies = new Map();
+
   /**
-   * Factory for creating common metric calculation strategies
+   * Create a strategy for counting items
    */
-  export class MetricStrategyFactory {
-    /**
-     * Create a strategy for counting items
-     */
-    static createCountStrategy() {
-      return new CountStrategy();
+  static createCountStrategy() {
+    return new CountStrategy();
+  }
+
+  /**
+   * Create a strategy for summing a field
+   */
+  static createSumStrategy() {
+    return new SumStrategy();
+  }
+
+  /**
+   * Create a strategy for getting minimum value of a field
+   */
+  static createMinStrategy() {
+    return new MinStrategy();
+  }
+
+  /**
+   * Create a strategy for getting maximum value of a field
+   */
+  static createMaxStrategy() {
+    return new MaxStrategy();
+  }
+
+  /**
+   * Clear all custom strategy overrides
+   */
+  static clearCustomStrategies() {
+    this.#customStrategies.clear();
+  }
+
+  /**
+   * Generate a unique key for the strategy map
+   * @private
+   * @param {string} metricName - The name of the metric
+   * @param {Function} ModelClass - The model class
+   * @returns {string} A unique key
+   */
+  static #generateStrategyKey(metricName, ModelClass) {
+    return `${metricName}::${ModelClass.configKey}::${ModelClass.modelName}`;
+  }
+
+  /**
+   * Override a strategy for a specific metric and model class
+   * @param {string} metricName - The name of the metric
+   * @param {Function|null} ModelClass - The model class or null for a generic override
+   * @param {MetricCalculationStrategy} strategy - The strategy to use
+   */
+  static overrideStrategy(metricName, ModelClass, strategy) {
+    if (!metricName || !strategy) {
+      throw new Error('overrideStrategy requires metricName and strategy');
     }
-  
-    /**
-     * Create a strategy for summing a field
-     */
-    static createSumStrategy() {
-      return new SumStrategy();
+
+    if (!(strategy instanceof MetricCalculationStrategy)) {
+      throw new Error('strategy must be an instance of MetricCalculationStrategy');
     }
-  
-    /**
-     * Create a strategy for getting minimum value of a field
-     */
-    static createMinStrategy() {
-      return new MinStrategy();
+
+    let key;
+    if (ModelClass) {
+      // Model-specific override
+      key = this.#generateStrategyKey(metricName, ModelClass);
+    } else {
+      // Generic override for all models
+      key = `${metricName}::*::*`;
     }
-  
-    /**
-     * Create a strategy for getting maximum value of a field
-     */
-    static createMaxStrategy() {
-      return new MaxStrategy();
+    
+    this.#customStrategies.set(key, strategy);
+  }
+
+  /**
+   * Get the appropriate strategy for a metric and model class
+   * @param {string} metricName - The name of the metric
+   * @param {Function} ModelClass - The model class
+   * @param {string} metricType - Optional metric type (count, sum, min, max)
+   * @returns {MetricCalculationStrategy} The appropriate strategy
+   */
+  static getStrategy(metricName, ModelClass, metricType = 'count') {
+    // Check for model-specific override first
+    const specificKey = this.#generateStrategyKey(metricName, ModelClass);
+    if (this.#customStrategies.has(specificKey)) {
+      return this.#customStrategies.get(specificKey);
+    }
+
+    // Check for metric-only override (works across all models)
+    const genericKey = `${metricName}::*::*`;
+    if (this.#customStrategies.has(genericKey)) {
+      return this.#customStrategies.get(genericKey);
+    }
+
+    // Otherwise, return the default strategy based on the metric type
+    switch (metricType.toLowerCase()) {
+      case 'sum':
+        return this.createSumStrategy();
+      case 'min':
+        return this.createMinStrategy();
+      case 'max':
+        return this.createMaxStrategy();
+      case 'count':
+      default:
+        return this.createCountStrategy();
     }
   }
+}

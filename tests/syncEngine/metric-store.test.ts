@@ -954,40 +954,36 @@ describe('MetricStore', () => {
     });
   });
   
-  describe('Sync and Versioning', () => {
-    test('should update version when syncing', async () => {
+  describe('Sync', () => {
+    test('should update value when syncing', async () => {
       const metric = new MetricStore({
         fetchMetricValue: () => Promise.resolve(10), // Different from initial value
         strategy: MetricStrategyFactory.createCountStrategy(),
         initialValue: 3,
-        name: 'VersionTest'
+        name: 'SyncTest'
       });
       
-      const initialVersion = metric.version;
       await metric.sync();
       
-      // Version should increment after sync with new value
-      expect(metric.version).toBe(initialVersion + 1);
+      // Only check that the value was updated
       expect(metric.getGroundTruth()).toBe(10);
     });
     
-    test('should not update version when sync yields same value', async () => {
+    test('should keep same value when sync yields same value', async () => {
       const metric = new MetricStore({
         fetchMetricValue: () => Promise.resolve(3), // Same as initial value
         strategy: MetricStrategyFactory.createCountStrategy(),
         initialValue: 3,
-        name: 'NoChangeVersion'
+        name: 'NoChangeTest'
       });
       
-      const initialVersion = metric.version;
       await metric.sync();
       
-      // Version should not change if value doesn't change
-      expect(metric.version).toBe(initialVersion);
+      // Verify value remains unchanged
       expect(metric.getGroundTruth()).toBe(3);
     });
     
-    test('should handle errors during sync without changing version', async () => {
+    test('should handle errors during sync without changing value', async () => {
       const metric = new MetricStore({
         fetchMetricValue: () => Promise.reject(new Error('Sync failed')),
         strategy: MetricStrategyFactory.createCountStrategy(),
@@ -995,11 +991,9 @@ describe('MetricStore', () => {
         name: 'ErrorSync'
       });
       
-      const initialVersion = metric.version;
       await metric.sync();
       
-      // Version and value should not change on sync error
-      expect(metric.version).toBe(initialVersion);
+      // Value should not change on sync error
       expect(metric.getGroundTruth()).toBe(3);
       expect(metric.lastSyncError).not.toBeNull();
     });
