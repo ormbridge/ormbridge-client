@@ -1,4 +1,4 @@
-import { ModelStore } from '../stores/modelStore';
+import { ModelStore } from '../stores/modelStore.js';
 import { isNil } from 'lodash-es';
 
 class ModelStoreRegistry {

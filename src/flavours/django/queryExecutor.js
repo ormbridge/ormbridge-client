@@ -2,7 +2,13 @@ import axios from 'axios';
 import { getConfig } from '../../config.js';
 import { parseORMBridgeError, MultipleObjectsReturned, DoesNotExist } from './errors.js';
 import { modelStoreRegistry } from '../../syncEngine/registries/modelStoreRegistry.js';
+import { querysetStoreRegistry } from '../../syncEngine/registries/querysetStoreRegistry.js';
+import { metricStoreRegistry } from '../../syncEngine/registries/metricStoreRegistry.js';
+import { Operation, create } from '../../syncEngine/stores/operation.js';
 import { isNil } from 'lodash-es'
+import { Model } from './model.js';
+import { v7 as uuid7 } from 'uuid';
+import { logger } from 'handlebars';
 
 /**
  * A custom data structure that behaves as an augmented array.
@@ -237,32 +243,47 @@ export class QueryExecutor {
      */
     static async executeExists(querySet, operationType = 'exists', args = {}) {
         // exists
-        const response = await this._makeApiCall(querySet, operationType, args);
-        
-        // Handle exists response (assuming response structure contains a boolean value)
-        let exists = response.data || false;
-        
-        // Return boolean
-        return exists;
+        const response = await this._makeApiCall(querySet, operationType, args);        
+        return response.data || false;
     }
 
     /**
      * Executes an update operation with the QuerySet.
-     * 
+     *       
      * @param {QuerySet} querySet - The QuerySet to execute.
      * @param {string} operationType - The operation type (always 'update' for this method).
      * @param {Object} args - Additional arguments for the operation.
      * @returns {Promise<Array>} Tuple with count and model counts map.
      */
     static async executeUpdate(querySet, operationType = 'update', args = {}) {
-        // update
-        const response = await this._makeApiCall(querySet, operationType, args);
+      const ModelClass = querySet.ModelClass;
+      const modelName = ModelClass.modelName;
+      const primaryKeyField = ModelClass.primaryKeyField;
+      let querysetPks = querysetStoreRegistry.getEntity(querySet);
         
-        // Handle update response
-        let updatedCount = response.data || 0;
-        
-        // Return tuple [count, {modelName: count}]
-        return [updatedCount, { [querySet.ModelClass.modelName]: updatedCount }];
+      const operation = new Operation({
+        type: operationType,
+        instances: querysetPks.map(pk => typeof pk === 'object' ? pk : { [primaryKeyField]: pk }),
+        queryset: querySet
+      });
+      
+      let response;
+      try {
+        response = await this._makeApiCall(querySet, operationType, args);
+      } catch (error) {
+        operation.updateStatus('rejected');
+        throw error;
+      }
+
+      let data;
+      let included;
+      if (response.data){
+        ({ data, included } = response.data);
+      }
+      
+      operation.updateStatus('confirmed', data);
+      const updatedCount = response.metadata?.rows_updated || 0;
+      return [updatedCount, { [modelName]: updatedCount }];
     }
 
     /**
@@ -274,14 +295,29 @@ export class QueryExecutor {
      * @returns {Promise<Array>} Tuple with count and model counts map.
      */
     static async executeDelete(querySet, operationType = 'delete', args = {}) {
-        // delete
-        const response = await this._makeApiCall(querySet, operationType, args);
+        const ModelClass = querySet.ModelClass;
+        const modelName = ModelClass.modelName;
+        const primaryKeyField = ModelClass.primaryKeyField;
+        let querysetPks = querysetStoreRegistry.getEntity(querySet);
+
+        const operation = new Operation({
+          type: operationType,
+          instances: querysetPks.map(pk => typeof pk === 'object' ? pk : { [primaryKeyField]: pk }),
+          queryset: querySet
+        });
         
-        // Handle delete response
-        let deletedCount = response.data || 0;
+        let response;
+        try {
+          response = await this._makeApiCall(querySet, operationType, args);
+        } catch (err){
+          operation.updateStatus('rejected')
+          throw err
+        }
         
-        // Return tuple [count, {modelName: count}]
-        return [deletedCount, { [querySet.ModelClass.modelName]: deletedCount }];
+        let deletedCount = response.metadata.deleted_count;
+        let deletedPks = response.data
+        operation.updateStatus('confirmed', deletedPks)
+        return [deletedCount, { [modelName]: deletedCount }];
     }
 
     /**
@@ -293,24 +329,46 @@ export class QueryExecutor {
      * @returns {Promise<Object>} The created model instance.
      */
     static async executeCreate(querySet, operationType = 'create', args = {}) {
-        // create
-        const response = await this._makeApiCall(querySet, operationType, args);
-        
-        // Handle create response
-        let { data, included } = response.data;
-        
-        if (isNil(data)) {
-            throw new Error(`Invalid response for create operation. Expected data to be present.`);
-        }
-        
-        // Process included entities
-        this._injestIncludedEntities(included, querySet.ModelClass);
-        
-        // Create instance with full data
-        let instance = new querySet.ModelClass(data);
-        
-        // Return model instance
-        return instance;
+      // create
+      const ModelClass = querySet.ModelClass;
+      const modelName = ModelClass.modelName;
+      const primaryKeyField = ModelClass.primaryKeyField;
+      let operationId = `${uuid7()}`
+
+      // set the data so the operationId matches
+      if (isNil(args.data)){
+        console.warn(`executeCreate was called with null data`)
+        args.data = {}
+      }
+      
+      // Create an operation record
+      const operation = new Operation({
+          operationId: operationId,
+          type: operationType,
+          instances: [{ ...args.data, [primaryKeyField]: operationId }],
+          queryset: querySet
+      });
+      
+      let response;
+      try {
+          response = await this._makeApiCall(querySet, operationType, args);
+      } catch (error) {
+          operation.updateStatus('rejected');
+          throw error;
+      }
+      
+      // Handle create response
+      let { data, included } = response.data;
+      
+      // Update operation status to confirmed
+      operation.mutate({
+        instances: [data],
+        status: 'confirmed'
+      });
+
+      let instance = ModelClass.from(data, false)
+      // Return model instance
+      return instance;
     }
 
     /**

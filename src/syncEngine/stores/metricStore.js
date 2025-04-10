@@ -1,3 +1,5 @@
+import { MetricStrategyFactory } from './metricOptCalcs.js';
+
 /**
  * Represents a single metric that maintains both ground truth and optimistic values.
  * It provides optimistic calculations based on a provided strategy and must be
@@ -7,20 +9,27 @@ export class MetricStore {
   /**
    * @param {object} options
    * @param {Function} options.fetchMetricValue - Async function () => Promise<any> to get the ground truth value
-   * @param {MetricCalculationStrategy} options.strategy - Strategy to calculate optimistic values
+   * @param {string} options.metricType - The type of metric e.g. min, max, sum, count, etc.
+   * @param {Function} options.ModelClass - Model class for strategy creation
    * @param {string|null} options.field - Field name to use for calculations (fixed for this metric)
    * @param {any} [options.initialValue=null] - Optional initial value for the metric's ground truth
    * @param {string} [options.name='UnnamedMetric'] - Optional name for logging/debugging
    */
   constructor(options) {
-    if (!options || !options.fetchMetricValue || !options.strategy) {
-      throw new Error("MetricStore requires options: fetchMetricValue, strategy");
+    if (!options || !options.fetchMetricValue || !options.metricType || !options.ModelClass) {
+      throw new Error("MetricStore requires options: fetchMetricValue, metricType, ModelClass");
     }
     
     this.fetchMetricValue = options.fetchMetricValue;
-    this.strategy = options.strategy;
+    this.metricType = options.metricType;
     this.field = options.field || null;
     this.name = options.name || 'UnnamedMetric';
+    
+    // Get the appropriate strategy directly using the metricType and ModelClass
+    this.strategy = MetricStrategyFactory.getStrategy(
+      this.metricType, 
+      options.ModelClass
+    );
     
     // Ground truth value
     this.value = options.initialValue !== undefined ? options.initialValue : null;

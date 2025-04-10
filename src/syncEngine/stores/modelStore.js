@@ -1,8 +1,7 @@
 import { Operation } from './operation.js';
 import { makeObservable, observable, action, computed, reaction } from 'mobx';
 import { computedFn } from 'mobx-utils';
-
-export const stateZeroEmitter = new EventTarget();
+import { type } from 'os';
 
 export class ModelStore {
     modelClass;
@@ -38,8 +37,8 @@ export class ModelStore {
     updateOperation(operation) {
         let existingIndex = this.operations.findIndex(op => op.operationId === operation.operationId);
         if (existingIndex !== -1) {
-             this.operations[existingIndex] = operation;
-             return true;
+            this.operations[existingIndex] = operation;
+            return true;
         }
         return false;
     }
@@ -133,13 +132,17 @@ export class ModelStore {
         let filteredOps = [];
         for (const op of operations) {
             let relevantInstances = op.instances.filter(instance =>
-                instance && typeof instance === 'object' && pkField in instance && pks.has(instance[pkField])
+                pks.has(instance[pkField] || instance)
             );
             if (relevantInstances.length > 0) {
-                 filteredOps.push(new Operation({
-                    ...op,
-                    instances: relevantInstances
-                }));
+                 filteredOps.push({
+                    operationId: op.operationId,
+                    instances: relevantInstances,
+                    timestamp: op.timestamp,
+                    queryset: op.queryset,
+                    type: op.type,
+                    status: op.status,
+                 });
             }
         }
         return filteredOps;

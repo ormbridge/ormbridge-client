@@ -1,3 +1,4 @@
+import { initEventHandler, cleanupEventHandler } from '../src/syncEngine/stores/operationEventHandlers';
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { DummyModel } from '../models/backend1/django_app/dummymodel';
 import { DummyRelatedModel } from '../models/backend1/django_app/dummyrelatedmodel';
@@ -35,6 +36,9 @@ describe('QueryExecutor Tests', () => {
 
     // Create a valid related model instance for use in tests
     relatedInstance = await DummyRelatedModel.objects.create({ name: 'ValidRelated' });
+    
+    // Initialzie the event handler AFTER
+    initEventHandler();
   });
 
   afterEach(async () => {
@@ -44,6 +48,8 @@ describe('QueryExecutor Tests', () => {
     
     // Reset config after each test
     setBackendConfig('default', originalConfig);
+
+    cleanupEventHandler(); 
   });
 
   // executeGet tests
@@ -424,9 +430,14 @@ describe('executeOrCreate', () => {
         value: 100,
         related: relatedInstance.pk
       });
-      // this is completely wrong, executing an update requires arguments!!!!
+      
       const querySet = DummyModel.objects.filter({ name__startswith: 'UpdateTest' });
-      const [updatedCount, mapping] = await QueryExecutor.executeUpdate(querySet);
+      // Add the necessary update data
+      const [updatedCount, mapping] = await QueryExecutor.executeUpdate(
+        querySet,
+        'update',
+        { data: { value: 200 } }
+      );
       
       expect(updatedCount).toBe(2);
       expect(mapping).toHaveProperty('django_app.dummymodel');
@@ -441,7 +452,12 @@ describe('executeOrCreate', () => {
 
     it('should return zero when no records match', async () => {
       const querySet = DummyModel.objects.filter({ name: 'NonExistentRecord' });
-      const [updatedCount, mapping] = await QueryExecutor.executeUpdate(querySet);
+      // Add the necessary update data
+      const [updatedCount, mapping] = await QueryExecutor.executeUpdate(
+        querySet,
+        'update',
+        { data: { value: 200 } }
+      );
       
       expect(updatedCount).toBe(0);
       expect(mapping).toHaveProperty('django_app.dummymodel');
@@ -494,13 +510,15 @@ describe('executeOrCreate', () => {
   // executeCreate tests
   describe('executeCreate', () => {
     it('should create a new instance', async () => {
-      const querySet = DummyModel.objects.filter({
+      const querySet = DummyModel.objects.all();
+
+      let data = {
         name: 'CreateTest',
         value: 30,
         related: relatedInstance.pk
-      });
+      }
       
-      const instance = await QueryExecutor.executeCreate(querySet);
+      const instance = await QueryExecutor.executeCreate(querySet, 'create', { data });
       
       expect(instance).toBeTruthy();
       expect(instance.name).toBe('CreateTest');

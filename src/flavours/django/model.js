@@ -50,9 +50,11 @@ export class Model {
   /**
    * Instantiate a model via the global registry rather than with local data
    */
-  static from(data) {
+  static from(data, write = true) {
     // this is the concrete model class (e.g., Product)
-    modelStoreRegistry.setEntity(this, data[this.primaryKeyField], data);
+    if (write){
+      modelStoreRegistry.setEntity(this, data[this.primaryKeyField], data);
+    }
     let verify = modelStoreRegistry.getEntity(this, data[this.primaryKeyField])
     const instance = new this();
     instance.#_pk = data[this.primaryKeyField];
@@ -139,16 +141,16 @@ export class Model {
     const allowedFields = this.fields;
     
     for (const key of Object.keys(data)) {
-      if (key === 'repr') continue;
+      if (key === 'repr' || key === 'type') continue;
       
       // Handle nested fields by splitting on double underscore
       // and taking just the base field name
       const baseField = key.split('__')[0];
       
       if (!allowedFields.includes(baseField)) {
-        throw new ValidationError(
-          `Invalid field: ${baseField}. Allowed fields are: ${allowedFields.join(', ')}`
-        );
+        let errorMsg = `Invalid field: ${baseField}. Allowed fields are: ${allowedFields.join(', ')}`
+        console.error(errorMsg)
+        throw new ValidationError(errorMsg);
       }
     }
   }

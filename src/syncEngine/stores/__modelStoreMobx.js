@@ -1,4 +1,4 @@
-import { Operation } from './operation.js';
+import { Operation, operationRegistry } from './operation.js';
 import { makeObservable, observable, action, computed, runInAction } from 'mobx';
 import { computedFn } from 'mobx-utils';
 
@@ -21,9 +21,12 @@ export class ModelStore {
 
         this.isSyncing = false;
         this.groundTruthArray = initialGroundTruth ? initialGroundTruth.slice() : [];
+        if (Array.isArray(initialOperations) && initialOperations.length){
+            if (!(initialOperations[0] instanceof Operation)) throw new Error('initialOperatons must be Operations')
+        } else {
+        
+        }
         this.operations = initialOperations
-            ? initialOperations.map(opData => opData instanceof Operation ? opData : new Operation(opData))
-            : [];
 
         makeObservable(this, {
             groundTruthArray: observable.deep,

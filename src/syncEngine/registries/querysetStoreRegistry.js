@@ -1,9 +1,8 @@
-import { LiveQueryset } from '../utils/liveQueryset';
-import { QuerysetStore } from '../stores/querysetStore';
+import { QuerysetStore } from '../stores/querysetStore.js';
+import { modelStoreRegistry } from '../registries/modelStoreRegistry.js';
+
 import { isNil } from 'lodash-es';
 import hash from 'object-hash';
-import { querysetStoreRegistry } from '../registries/querysetStoreRegistry';
-import { modelStoreRegistry } from '../registries/modelStoreRegistry';
 
 /**
  * A dynamic wrapper that always returns the latest queryset results
@@ -17,7 +16,7 @@ export class LiveQueryset {
   
     constructor(queryset) {
       this.#queryset = queryset;
-      this.#ModelClass = queryset.model;
+      this.#ModelClass = queryset.ModelClass;
       
       // Create a proxy that intercepts all array access
       this.#proxy = new Proxy([], {
@@ -71,17 +70,22 @@ class QuerysetStoreRegistry {
   }
 
   _generateKey(queryset) {
-    const keyParts = {
-      modelName: queryset.model.modelName,
-      configKey: queryset.model.configKey,
-      queryHash: hash(queryset.build())
+    const ast = queryset.build();
+    
+    // Extract only the relevant parts that affect the queryset results
+    const relevantAst = {
+      filter: ast.filter ? JSON.stringify(ast.filter) : null,
+      search: ast.search ? JSON.stringify(ast.search) : null,
     };
     
-    return `${keyParts.configKey}::${keyParts.modelName}::${keyParts.queryHash}`;
+    // Generate a hash of the relevant parts
+    const queryHash = hash(relevantAst);
+    
+    return `${queryset.ModelClass.configKey}::${queryset.ModelClass.modelName}::${queryHash}`;
   }
 
   getStore(queryset) {
-    if (isNil(queryset) || isNil(queryset.model)) {
+    if (isNil(queryset) || isNil(queryset.ModelClass)) {
       throw new Error("QuerysetStoreRegistry.getStore requires a valid queryset");
     }
     
@@ -95,7 +99,7 @@ class QuerysetStoreRegistry {
       };
       
       this._stores.set(key, new QuerysetStore(
-        queryset.model,
+        queryset.ModelClass,
         fetchQueryset,
         queryset.build(),
         [], // Initial ground truth PKs
@@ -124,12 +128,12 @@ class QuerysetStoreRegistry {
    * @param {Array} instances - Array of instances to set as ground truth
    * @returns {Array} - The set instances
    */
-  setQueryset(queryset, instances) {
+  setEntity(queryset, instances) {
     if (isNil(queryset) || isNil(instances)) return [];
     
     const store = this.getStore(queryset);
     store.setGroundTruth(
-      instances.map(instance => instance[queryset.model.primaryKeyField] || instance)
+      instances.map(instance => instance[queryset.ModelClass.primaryKeyField] || instance)
     );
     return instances;
   }
