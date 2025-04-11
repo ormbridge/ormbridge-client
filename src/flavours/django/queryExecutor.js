@@ -129,8 +129,9 @@ export class QueryExecutor {
      */
     static async executeGet(querySet, operationType, args = {}) {
       // get, first, last
+      let apiCallArgs = {};
       let ModelClass = querySet.ModelClass
-      const response = await this._makeApiCall(querySet, operationType, args);
+      const response = await this._makeApiCall(querySet, operationType, apiCallArgs);
       let { data, included } = response.data
 
       if (isNil(data)) return null;
@@ -158,8 +159,9 @@ export class QueryExecutor {
      */
     static async executeList(querySet, operationType = 'list', args = {}) {
       // list
+      let apiCallArgs = {};
       let ModelClass = querySet.ModelClass;
-      const response = await this._makeApiCall(querySet, operationType, args);
+      const response = await this._makeApiCall(querySet, operationType, apiCallArgs);
       let { data, included } = response.data;
       
       if (isNil(data)) return [];
@@ -191,12 +193,14 @@ export class QueryExecutor {
     static async executeOrCreate(querySet, operationType, args = {}) {
       // get_or_create, update_or_create
       let ModelClass = querySet.ModelClass;
-      
-      // Construct the proper args format if not provided
-      const finalArgs = {...args};
+
+      const apiCallArgs = {
+        lookup: args.lookup || {},
+        defaults: args.defaults || {}
+      };
       
       // Pass args to _makeApiCall
-      const response = await this._makeApiCall(querySet, operationType, finalArgs);
+      const response = await this._makeApiCall(querySet, operationType, apiCallArgs);
       let { data, included } = response.data;
       let created = response.metadata.created;
       
@@ -223,11 +227,18 @@ export class QueryExecutor {
      * @returns {Promise<number>} The aggregation result.
      */
     static async executeAgg(querySet, operationType, args = {}) {  
-        if (operationType === 'count'){
-          args.field = args.field || querySet.ModelClass.primaryKeyField
+        const apiCallArgs = {
+          field: operationType === 'count' ? 
+            (args.field || querySet.ModelClass.primaryKeyField) : 
+            args.field
+        };
+
+        // Only include defined properties
+        if (apiCallArgs.field === undefined) {
+          throw new Error(`Field parameter is required for ${operationType} operation`);
         }
 
-        const response = await this._makeApiCall(querySet, operationType, args);
+        const response = await this._makeApiCall(querySet, operationType, apiCallArgs);
         
         // Handle aggregation response
         let value = response.data || 0;
@@ -246,7 +257,8 @@ export class QueryExecutor {
      */
     static async executeExists(querySet, operationType = 'exists', args = {}) {
         // exists
-        const response = await this._makeApiCall(querySet, operationType, args);        
+        const apiCallArgs = {};
+        const response = await this._makeApiCall(querySet, operationType, apiCallArgs);        
         return response.data || false;
     }
 
@@ -263,16 +275,21 @@ export class QueryExecutor {
       const modelName = ModelClass.modelName;
       const primaryKeyField = ModelClass.primaryKeyField;
       let querysetPks = querysetStoreRegistry.getEntity(querySet);
+
+      const apiCallArgs = {
+        filter: args.filter,
+        data: args.data || {}
+      };
         
       const operation = new Operation({
         type: operationType,
-        instances: querysetPks.map(pk => typeof pk === 'object' ? pk : { [primaryKeyField]: pk }),
+        instances: querysetPks.map(pk => typeof pk === 'object' ? pk : { ...apiCallArgs.data, [primaryKeyField]: pk }),
         queryset: querySet
       });
       
       let response;
       try {
-        response = await this._makeApiCall(querySet, operationType, args);
+        response = await this._makeApiCall(querySet, operationType, apiCallArgs);
       } catch (error) {
         operation.updateStatus('rejected');
         throw error;
@@ -303,6 +320,8 @@ export class QueryExecutor {
         const primaryKeyField = ModelClass.primaryKeyField;
         let querysetPks = querysetStoreRegistry.getEntity(querySet);
 
+        let apiCallArgs = {}
+
         const operation = new Operation({
           type: operationType,
           instances: querysetPks.map(pk => typeof pk === 'object' ? pk : { [primaryKeyField]: pk }),
@@ -311,7 +330,7 @@ export class QueryExecutor {
         
         let response;
         try {
-          response = await this._makeApiCall(querySet, operationType, args);
+          response = await this._makeApiCall(querySet, operationType, apiCallArgs);
         } catch (err){
           operation.updateStatus('rejected')
           throw err
@@ -338,6 +357,10 @@ export class QueryExecutor {
       const primaryKeyField = ModelClass.primaryKeyField;
       let operationId = `${uuid7()}`
 
+      const apiCallArgs = {
+        data: args.data || {}
+      };
+
       // set the data so the operationId matches
       if (isNil(args.data)){
         console.warn(`executeCreate was called with null data`)
@@ -348,13 +371,13 @@ export class QueryExecutor {
       const operation = new Operation({
           operationId: operationId,
           type: operationType,
-          instances: [{ ...args.data, [primaryKeyField]: operationId }],
+          instances: [{ ...apiCallArgs.data, [primaryKeyField]: operationId }],
           queryset: querySet
       });
       
       let response;
       try {
-          response = await this._makeApiCall(querySet, operationType, args);
+          response = await this._makeApiCall(querySet, operationType, apiCallArgs);
       } catch (error) {
           operation.updateStatus('rejected');
           throw error;
@@ -387,17 +410,20 @@ export class QueryExecutor {
       const ModelClass = querySet.ModelClass;
       const primaryKeyField = ModelClass.primaryKeyField;
       let querysetPks = querysetStoreRegistry.getEntity(querySet);
-      let operationId = `${uuid7()}`
       
+      const apiCallArgs = {
+        data: args.data || {}
+      };
+
       const operation = new Operation({
         type: operationType,
-        instances: querysetPks.map(pk => typeof pk === 'object' ? pk : { [primaryKeyField]: pk }),
+        instances: querysetPks.map(pk => typeof pk === 'object' ? pk : { ...apiCallArgs.data, [primaryKeyField]: pk }),
         queryset: querySet
       });
       
       let response;
       try {
-        response = await this._makeApiCall(querySet, operationType, args);
+        response = await this._makeApiCall(querySet, operationType, apiCallArgs);
       } catch (error) {
         operation.updateStatus('rejected');
         throw error;
@@ -429,6 +455,7 @@ export class QueryExecutor {
     const modelName = ModelClass.modelName;
     const primaryKeyField = ModelClass.primaryKeyField;
     let querysetPks = querysetStoreRegistry.getEntity(querySet);
+    let apiCallArgs = {}
 
     const operation = new Operation({
       type: operationType,
@@ -438,7 +465,7 @@ export class QueryExecutor {
     
     let response;
     try {
-      response = await this._makeApiCall(querySet, operationType, args);
+      response = await this._makeApiCall(querySet, operationType, apiCallArgs);
     } catch (err){
       operation.updateStatus('rejected')
       throw err
