@@ -12,7 +12,6 @@ export const OperationEventTypes = {
     CLEAR: 'clear:all',
     MUTATED: 'operation:mutated'
 };
-  
 
 export class Operation {
     operationId;

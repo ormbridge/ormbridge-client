@@ -222,8 +222,11 @@ export class QueryExecutor {
      * @param {Object} args - Additional arguments for the operation.
      * @returns {Promise<number>} The aggregation result.
      */
-    static async executeAgg(querySet, operationType, args = {}) {
-        // min, max, sum, avg, count
+    static async executeAgg(querySet, operationType, args = {}) {  
+        if (operationType === 'count'){
+          args.field = args.field || querySet.ModelClass.primaryKeyField
+        }
+
         const response = await this._makeApiCall(querySet, operationType, args);
         
         // Handle aggregation response
@@ -371,6 +374,7 @@ export class QueryExecutor {
       return instance;
     }
 
+    
     /**
      * Executes an update_instance operation with the QuerySet.
      * 
@@ -380,25 +384,71 @@ export class QueryExecutor {
      * @returns {Promise<Object>} The updated model instance.
      */
     static async executeUpdateInstance(querySet, operationType = 'update_instance', args = {}) {
-        // update_instance
-        const response = await this._makeApiCall(querySet, operationType, args);
-        
-        // Handle update_instance response
-        let { data, included } = response.data;
+      const ModelClass = querySet.ModelClass;
+      const primaryKeyField = ModelClass.primaryKeyField;
+      let querysetPks = querysetStoreRegistry.getEntity(querySet);
+      let operationId = `${uuid7()}`
+      
+      const operation = new Operation({
+        type: operationType,
+        instances: querysetPks.map(pk => typeof pk === 'object' ? pk : { [primaryKeyField]: pk }),
+        queryset: querySet
+      });
+      
+      let response;
+      try {
+        response = await this._makeApiCall(querySet, operationType, args);
+      } catch (error) {
+        operation.updateStatus('rejected');
+        throw error;
+      }
 
-        if (isNil(data)) {
-            throw new Error(`Invalid response for update_instance operation. Expected data to be present.`);
-        }
-        
-        // Process included entities
-        this._injestIncludedEntities(included, querySet.ModelClass);
-        
-        // Create instance with full data
-        let instance = new querySet.ModelClass(data);
-        
-        // Return model instance
-        return instance;
+      // Handle update_instance response
+      let { data, included } = response.data;
+      
+      // Update operation status to confirmed
+      operation.updateStatus('confirmed', [data]);
+      
+      // Create instance using from method with write=false
+      let instance = ModelClass.from(data, false);
+      
+      // Return model instance
+      return instance;
     }
+
+  /**
+   * Executes a delete_instance operation with the QuerySet.
+   * 
+   * @param {QuerySet} querySet - The QuerySet to execute.
+   * @param {string} operationType - The operation type (always 'delete_instance' for this method).
+   * @param {Object} args - Additional arguments for the operation.
+   * @returns {Promise<Array>} Tuple with count and model counts map.
+   */
+  static async executeDeleteInstance(querySet, operationType = 'delete_instance', args = {}) {
+    const ModelClass = querySet.ModelClass;
+    const modelName = ModelClass.modelName;
+    const primaryKeyField = ModelClass.primaryKeyField;
+    let querysetPks = querysetStoreRegistry.getEntity(querySet);
+
+    const operation = new Operation({
+      type: operationType,
+      instances: querysetPks.map(pk => typeof pk === 'object' ? pk : { [primaryKeyField]: pk }),
+      queryset: querySet
+    });
+    
+    let response;
+    try {
+      response = await this._makeApiCall(querySet, operationType, args);
+    } catch (err){
+      operation.updateStatus('rejected')
+      throw err
+    }
+    
+    let deletedCount = response.metadata.deleted_count;
+    let deletedPks = response.data
+    operation.updateStatus('confirmed', deletedPks)
+    return [deletedCount, { [modelName]: deletedCount }];
+  }
 
     /**
      * Executes a delete_instance operation with the QuerySet.
@@ -409,14 +459,41 @@ export class QueryExecutor {
      * @returns {Promise<Array>} Tuple with count and model counts map.
      */
     static async executeDeleteInstance(querySet, operationType = 'delete_instance', args = {}) {
-        // delete_instance
-        const response = await this._makeApiCall(querySet, operationType, args);
-        
-        // Handle delete_instance response
-        let deletedCount = response.data || 0;
-        
-        // Return tuple [count, {modelName: count}]
-        return [deletedCount, { [querySet.ModelClass.modelName]: deletedCount }];
+      const ModelClass = querySet.ModelClass;
+      const modelName = ModelClass.modelName;
+      const primaryKeyField = ModelClass.primaryKeyField;
+      
+      // Extract instance primary key from args
+      const pkField = ModelClass.primaryKeyField;
+      const instanceId = args[pkField];
+      
+      if (!instanceId) {
+          throw new Error(`${pkField} is required for delete_instance operation`);
+      }
+      
+      // Create an operation record
+      const operation = new Operation({
+          type: operationType,
+          instances: [{ [primaryKeyField]: instanceId }],
+          queryset: querySet
+      });
+      
+      let response;
+      try {
+          response = await this._makeApiCall(querySet, operationType, args);
+      } catch (error) {
+          operation.updateStatus('rejected');
+          throw error;
+      }
+      
+      // Handle delete_instance response
+      let deletedCount = response.data || 0;
+      
+      // Update operation status to confirmed
+      operation.updateStatus('confirmed', [{ [primaryKeyField]: instanceId }]);
+      
+      // Return tuple [count, {modelName: count}]
+      return [deletedCount, { [modelName]: deletedCount }];
     }
 
     /**

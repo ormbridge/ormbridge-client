@@ -325,7 +325,7 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'SumTest' });
-      const sum = await QueryExecutor.executeAgg(querySet, 'sum');
+      const sum = await QueryExecutor.executeAgg(querySet, 'sum', {field: 'value'});
       
       expect(sum).toBe(70);
     });
@@ -345,7 +345,7 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'AvgTest' });
-      const avg = await QueryExecutor.executeAgg(querySet, 'avg');
+      const avg = await QueryExecutor.executeAgg(querySet, 'avg', {field: 'value'});
       
       expect(avg).toBe(75);
     });
@@ -365,7 +365,7 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'MinTest' });
-      const min = await QueryExecutor.executeAgg(querySet, 'min');
+      const min = await QueryExecutor.executeAgg(querySet, 'min', {field: 'value'});
       
       expect(min).toBe(60);
     });
@@ -385,7 +385,7 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'MaxTest' });
-      const max = await QueryExecutor.executeAgg(querySet, 'max');
+      const max = await QueryExecutor.executeAgg(querySet, 'max', {field: 'value'});
       
       expect(max).toBe(90);
     });
@@ -541,11 +541,8 @@ describe('executeOrCreate', () => {
         related: relatedInstance.pk
       });
       
-      // Create modified instance
-      const modifiedInstance = { ...instance, value: 50 };
-      
       const querySet = DummyModel.objects.filter({ id: instance.pk });
-      const updated = await QueryExecutor.executeUpdateInstance(querySet);
+      const updated = await QueryExecutor.executeUpdateInstance(querySet, 'update_instance', { data: { value: 50 }});
       
       expect(updated).toBeTruthy();
       expect(updated.name).toBe('UpdateInstanceTest');
@@ -568,7 +565,7 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ id: instance.pk });
-      const [deletedCount, mapping] = await QueryExecutor.executeDeleteInstance(querySet);
+      const [deletedCount, mapping] = await QueryExecutor.executeDeleteInstance(querySet, 'delete_instance', { id: instance.pk });
       
       expect(deletedCount).toBe(1);
       expect(mapping).toHaveProperty('django_app.dummymodel');
@@ -605,7 +602,7 @@ describe('executeOrCreate', () => {
       
       // Read/List operation
       const querySet2 = DummyModel.objects.filter({ name__startswith: 'ExecuteTest' });
-      const listResult = await QueryExecutor.execute(querySet2, 'read');
+      const listResult = await QueryExecutor.execute(querySet2, 'list');
       expect(listResult.length).toBe(2);
       
       // Count operation

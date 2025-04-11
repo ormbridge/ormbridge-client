@@ -180,6 +180,7 @@ export class ModelStore {
                         currentInstances.set(pk, instance);
                     }
                     break;
+                case 'update_instance':
                 case 'update': {
                     const existing = currentInstances.get(pk);
                     if (existing) {
@@ -205,6 +206,7 @@ export class ModelStore {
                     }
                     break;
                 }
+                case 'delete_instance':
                 case 'delete':
                     currentInstances.delete(pk);
                     break;
