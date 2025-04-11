@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { liveView } from '../core/liveView.js';
+let liveView = null;
 
 /**
  * Custom hook to use a live metric with React state.

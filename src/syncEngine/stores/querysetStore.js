@@ -14,7 +14,7 @@ export class QuerysetStore {
         fetchFn,
         ast,
         initialGroundTruthPks,
-        initialOperations
+        initialOperations,
     ) {
         this.modelClass = modelClass;
         this.fetchFn = fetchFn;
@@ -97,12 +97,8 @@ export class QuerysetStore {
             return this._handleSpecialOperation(operation, currentPks);
         }
 
-        for (const instance of operation.instances) {
-             if (!instance || typeof instance !== 'object' || !(pkField in instance)) {
-                console.warn(`[QuerysetStore ${this.modelClass.modelName}] Skipping instance in operation ${operation.operationId} due to missing PK field '${String(pkField)}' or invalid format.`);
-                continue;
-            }
-            const pk = instance[pkField];
+        const pks = operation.instancePks;
+        for (const pk of pks) {
             switch (operation.type) {
                 case 'create':
                 case 'get_or_create':

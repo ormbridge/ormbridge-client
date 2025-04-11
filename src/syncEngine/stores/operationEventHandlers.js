@@ -55,13 +55,13 @@ function handleOperationMutated(operation) {
   
   // For update and delete operations, apply to all querysets for this model
   // For create operations, only apply to the originating queryset
-  if (operation.operationType === 'create') {
+  if (operation.type === 'create') {
     // Update in originating QuerysetStore only
     const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
     if (querysetStore) {
       querysetStore.updateOperation(operation);
     }
-  } else if (operation.operationType === 'update' || operation.operationType === 'delete') {
+  } else if (operation.type === 'update' || operation.type === 'delete') {
     // Update in ALL QuerysetStores for this model
     const allQuerysetStores = querysetStoreRegistry.getAllStoresForModel(ModelClass);
     allQuerysetStores.forEach(store => {
@@ -92,7 +92,7 @@ function handleOperationCreated(operation) {
   
   // For create operations, only add to the originating queryset
   // For all other operation types, add to all querysets for this model
-  if (operation.operationType === 'create') {
+  if (operation.type === 'create') {
     // Add to originating QuerysetStore only
     const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
     if (querysetStore) {
@@ -126,7 +126,7 @@ function handleOperationUpdated(operation) {
   
   // For create operations, only update in the originating queryset
   // For all other operation types, update in all querysets for this model
-  if (operation.operationType === 'create') {
+  if (operation.type === 'create') {
     // Update in originating QuerysetStore only
     const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
     if (querysetStore) {
@@ -160,7 +160,7 @@ function handleOperationConfirmed(operation) {
   
   // For create operations, only confirm in the originating queryset
   // For all other operation types, confirm in all querysets for this model
-  if (operation.operationType === 'create') {
+  if (operation.type === 'create') {
     // Confirm in originating QuerysetStore only
     const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
     if (querysetStore) {
@@ -194,7 +194,7 @@ function handleOperationRejected(operation) {
   
   // For create operations, only reject in the originating queryset
   // For all other operation types, reject in all querysets for this model
-  if (operation.operationType === 'create') {
+  if (operation.type === 'create') {
     // Reject in originating QuerysetStore only
     const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
     if (querysetStore) {
