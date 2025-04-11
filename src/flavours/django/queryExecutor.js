@@ -400,8 +400,6 @@ export class QueryExecutor {
           instances: [{ ...apiCallArgs.data, [primaryKeyField]: operationId }],
           queryset: querySet
       });
-      console.log('create________________')
-      console.log(JSON.stringify(operation))
       
       let response;
       try {
@@ -419,8 +417,6 @@ export class QueryExecutor {
         instances: [data],
         status: 'confirmed'
       });
-      console.log('after_mutation________________')
-      console.log(JSON.stringify(operation))
 
       let instance = ModelClass.from(data, false)
       // Return model instance

@@ -145,7 +145,9 @@ class QuerysetStoreRegistry {
    */
   getAllStoresForModel(ModelClass) {
     if (!ModelClass) return [];
-    return Array.from(this._stores.values()).filter(store => store.modelClass === ModelClass);
+    return Array.from(this._stores.values()).filter(store => 
+      store?.queryset?.ModelClass === ModelClass
+    );
   }
 }
 

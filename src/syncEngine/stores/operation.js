@@ -1,7 +1,6 @@
 import { v7 as uuidv7 } from "uuid";
 import { isNil } from 'lodash-es'
 import mitt from 'mitt';
-import { Model } from "../../react-entry";
 
 export const operationEvents = mitt();
 
@@ -48,10 +47,12 @@ export class Operation {
             instances = Array.isArray(data.instances) ? data.instances : [data.instances];
         }
         
-        // make sure they havent provided pks
-        let pkField = ModelClass.primaryKeyField;
-        if (instances.some(instance => isNil(instance) || typeof instance !== 'object' || !(pkField in instance))) {
-            throw new Error(`All operation instances must be objects with the '${pkField}' field`);
+        // coerce to object format if its not already
+        if (Array.isArray(instances) && instances[0]){
+            if (instances[0][ModelClass.primaryKeyField]){
+                // its a listg of pks -> should be objects
+                instances = instances.map(pk => ({[ModelClass.primaryKeyField]: pk}))
+            }
         }
 
         this.instances = instances
@@ -61,15 +62,6 @@ export class Operation {
 
         // Emit operation created event with the entire operation
         operationEvents.emit(OperationEventTypes.CREATED, this);
-    }
-
-    /**
-     * Get primary keys of all instances in this operation
-     * Returns primary keys as simple values (not objects)
-     */
-    get instancePks() {
-        const pkField = this.queryset.ModelClass.primaryKeyField;
-        return this.instances.map(instance => instance[pkField]);
     }
 
     /**
