@@ -1,5 +1,5 @@
 import { initEventHandler, cleanupEventHandler } from '../src/syncEngine/stores/operationEventHandlers';
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { DummyModel } from '../models/backend1/django_app/dummymodel';
 import { DummyRelatedModel } from '../models/backend1/django_app/dummyrelatedmodel';
 import { setBackendConfig } from '../src/config';
@@ -24,6 +24,7 @@ describe('QueryExecutor Tests', () => {
       })
     };
     setBackendConfig('default', originalConfig);
+    initEventHandler();
   });
 
   beforeEach(async () => {
@@ -36,9 +37,6 @@ describe('QueryExecutor Tests', () => {
 
     // Create a valid related model instance for use in tests
     relatedInstance = await DummyRelatedModel.objects.create({ name: 'ValidRelated' });
-    
-    // Initialzie the event handler AFTER
-    initEventHandler();
   });
 
   afterEach(async () => {
@@ -48,12 +46,14 @@ describe('QueryExecutor Tests', () => {
     
     // Reset config after each test
     setBackendConfig('default', originalConfig);
-
-    cleanupEventHandler(); 
   });
 
+  afterAll(async () => {
+    cleanupEventHandler();
+  })
+
   // executeGet tests
-  describe('executeGet', () => {
+  describe('get operations', () => {
     it('should fetch a single instance successfully', async () => {
       // Create a test instance
       const instance = await DummyModel.objects.create({
@@ -63,7 +63,7 @@ describe('QueryExecutor Tests', () => {
       });
       
       const querySet = DummyModel.objects.filter({ id: instance.pk });
-      const result = await QueryExecutor.executeGet(querySet, 'get');
+      const result = await QueryExecutor.execute(querySet, 'get');
       
       expect(result).toBeTruthy();
       expect(result.name).toBe('GetTest');
@@ -74,7 +74,7 @@ describe('QueryExecutor Tests', () => {
     it('should throw DoesNotExist when no record matches', async () => {
       const querySet = DummyModel.objects.filter({ id: 9999 });
       
-      await expect(QueryExecutor.executeGet(querySet, 'get'))
+      await expect(QueryExecutor.execute(querySet, 'get'))
         .rejects.toBeInstanceOf(DoesNotExist);
     });
 
@@ -87,7 +87,7 @@ describe('QueryExecutor Tests', () => {
       });
       
       const querySet = DummyModel.objects.filter({ id: instance.pk }).selectRelated('related');
-      const result = await QueryExecutor.executeGet(querySet, 'get');
+      const result = await QueryExecutor.execute(querySet, 'get');
       
       expect(result).toBeTruthy();
       expect(result.related).toBeTruthy();
@@ -109,7 +109,7 @@ describe('QueryExecutor Tests', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'FirstTest' }).orderBy('value');
-      const result = await QueryExecutor.executeGet(querySet, 'first');
+      const result = await QueryExecutor.execute(querySet, 'first');
       
       expect(result).toBeTruthy();
       expect(result.name).toBe('FirstTest1');
@@ -118,7 +118,7 @@ describe('QueryExecutor Tests', () => {
 
     it('should return null when first() finds no records', async () => {
       const querySet = DummyModel.objects.filter({ name: 'NonExistent' });
-      const result = await QueryExecutor.executeGet(querySet, 'first');
+      const result = await QueryExecutor.execute(querySet, 'first');
       
       expect(result).toBeNull();
     });
@@ -138,7 +138,7 @@ describe('QueryExecutor Tests', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'LastTest' }).orderBy('value');
-      const result = await QueryExecutor.executeGet(querySet, 'last');
+      const result = await QueryExecutor.execute(querySet, 'last');
       
       expect(result).toBeTruthy();
       expect(result.name).toBe('LastTest2');
@@ -147,7 +147,7 @@ describe('QueryExecutor Tests', () => {
   });
 
   // executeList tests
-  describe('executeList', () => {
+  describe('list operations', () => {
     it('should fetch all instances matching a filter', async () => {
       // Create multiple test instances
       await DummyModel.objects.create({
@@ -163,7 +163,7 @@ describe('QueryExecutor Tests', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'ListTest' });
-      const results = await QueryExecutor.executeList(querySet);
+      const results = await QueryExecutor.execute(querySet, 'list');
       
       expect(Array.isArray(results)).toBe(true);
       expect(results.length).toBe(2);
@@ -173,7 +173,7 @@ describe('QueryExecutor Tests', () => {
 
     it('should return an empty array when no records match', async () => {
       const querySet = DummyModel.objects.filter({ name: 'NonExistent' });
-      const results = await QueryExecutor.executeList(querySet);
+      const results = await QueryExecutor.execute(querySet, 'list');
       
       expect(Array.isArray(results)).toBe(true);
       expect(results.length).toBe(0);
@@ -188,7 +188,7 @@ describe('QueryExecutor Tests', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name: 'ListRelatedTest' }).selectRelated('related');
-      const results = await QueryExecutor.executeList(querySet);
+      const results = await QueryExecutor.execute(querySet, 'list');
       
       expect(results.length).toBe(1);
       expect(results[0].related).toBeTruthy();
@@ -197,7 +197,7 @@ describe('QueryExecutor Tests', () => {
   });
 
   // executeOrCreate tests
-describe('executeOrCreate', () => {
+  describe('create operations', () => {
     it('should get an existing instance without creating a new one', async () => {
       // Create a test instance
       const instance = await DummyModel.objects.create({
@@ -215,7 +215,7 @@ describe('executeOrCreate', () => {
         }
       };
       
-      const resultTuple = await QueryExecutor.executeOrCreate(querySet, 'get_or_create', args);
+      const resultTuple = await QueryExecutor.execute(querySet, 'get_or_create', args);
       
       expect(resultTuple).toBeInstanceOf(Array);
       expect(resultTuple.length).toBe(2);
@@ -240,7 +240,7 @@ describe('executeOrCreate', () => {
         }
       };
       
-      const resultTuple = await QueryExecutor.executeOrCreate(querySet, 'get_or_create', args);
+      const resultTuple = await QueryExecutor.execute(querySet, 'get_or_create', args);
       
       expect(resultTuple).toBeInstanceOf(Array);
       expect(resultTuple.length).toBe(2);
@@ -276,7 +276,7 @@ describe('executeOrCreate', () => {
         }
       };
       
-      const resultTuple = await QueryExecutor.executeOrCreate(querySet, 'update_or_create', args);
+      const resultTuple = await QueryExecutor.execute(querySet, 'update_or_create', args);
       
       expect(resultTuple).toBeInstanceOf(Array);
       expect(resultTuple[0].value).toBe(130);
@@ -286,10 +286,31 @@ describe('executeOrCreate', () => {
       const updated = await DummyModel.objects.get({ name: 'UpdateOrCreateTest' });
       expect(updated.value).toBe(130);
     });
+
+    it('should create a new instance', async () => {
+      const querySet = DummyModel.objects.all();
+
+      let data = {
+        name: 'CreateTest',
+        value: 30,
+        related: relatedInstance.pk
+      };
+      
+      const instance = await QueryExecutor.execute(querySet, 'create', { data });
+      
+      expect(instance).toBeTruthy();
+      expect(instance.name).toBe('CreateTest');
+      expect(instance.value).toBe(30);
+      expect(instance.related.id).toBe(relatedInstance.pk);
+      
+      // Verify instance was actually created in the database
+      const exists = await DummyModel.objects.filter({ name: 'CreateTest' }).exists();
+      expect(exists).toBe(true);
+    });
   });
 
   // executeAgg tests
-  describe('executeAgg', () => {
+  describe('aggregation operations', () => {
     it('should calculate count correctly', async () => {
       // Create multiple test instances
       await DummyModel.objects.create({
@@ -305,7 +326,7 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'AggTest' });
-      const count = await QueryExecutor.executeAgg(querySet, 'count');
+      const count = await QueryExecutor.execute(querySet, 'count');
       
       expect(count).toBe(2);
     });
@@ -325,7 +346,7 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'SumTest' });
-      const sum = await QueryExecutor.executeAgg(querySet, 'sum', {field: 'value'});
+      const sum = await QueryExecutor.execute(querySet, 'sum', {field: 'value'});
       
       expect(sum).toBe(70);
     });
@@ -345,7 +366,7 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'AvgTest' });
-      const avg = await QueryExecutor.executeAgg(querySet, 'avg', {field: 'value'});
+      const avg = await QueryExecutor.execute(querySet, 'avg', {field: 'value'});
       
       expect(avg).toBe(75);
     });
@@ -365,7 +386,7 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'MinTest' });
-      const min = await QueryExecutor.executeAgg(querySet, 'min', {field: 'value'});
+      const min = await QueryExecutor.execute(querySet, 'min', {field: 'value'});
       
       expect(min).toBe(60);
     });
@@ -385,14 +406,14 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'MaxTest' });
-      const max = await QueryExecutor.executeAgg(querySet, 'max', {field: 'value'});
+      const max = await QueryExecutor.execute(querySet, 'max', {field: 'value'});
       
       expect(max).toBe(90);
     });
   });
 
   // executeExists tests
-  describe('executeExists', () => {
+  describe('exists operations', () => {
     it('should return true when records exist', async () => {
       // Create a test instance
       await DummyModel.objects.create({
@@ -402,21 +423,21 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ name: 'ExistsTest' });
-      const exists = await QueryExecutor.executeExists(querySet);
+      const exists = await QueryExecutor.execute(querySet, 'exists');
       
       expect(exists).toBe(true);
     });
 
     it('should return false when no records exist', async () => {
       const querySet = DummyModel.objects.filter({ name: 'NonExistentRecord' });
-      const exists = await QueryExecutor.executeExists(querySet);
+      const exists = await QueryExecutor.execute(querySet, 'exists');
       
       expect(exists).toBe(false);
     });
   });
 
   // executeUpdate tests
-  describe('executeUpdate', () => {
+  describe('update operations', () => {
     it('should update all matching records', async () => {
       // Create multiple test instances
       await DummyModel.objects.create({
@@ -433,7 +454,7 @@ describe('executeOrCreate', () => {
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'UpdateTest' });
       // Add the necessary update data
-      const [updatedCount, mapping] = await QueryExecutor.executeUpdate(
+      const [updatedCount, mapping] = await QueryExecutor.execute(
         querySet,
         'update',
         { data: { value: 200 } }
@@ -453,7 +474,7 @@ describe('executeOrCreate', () => {
     it('should return zero when no records match', async () => {
       const querySet = DummyModel.objects.filter({ name: 'NonExistentRecord' });
       // Add the necessary update data
-      const [updatedCount, mapping] = await QueryExecutor.executeUpdate(
+      const [updatedCount, mapping] = await QueryExecutor.execute(
         querySet,
         'update',
         { data: { value: 200 } }
@@ -463,10 +484,30 @@ describe('executeOrCreate', () => {
       expect(mapping).toHaveProperty('django_app.dummymodel');
       expect(mapping['django_app.dummymodel']).toBe(0);
     });
+
+    it('should update a specific instance', async () => {
+      // Create a test instance
+      const instance = await DummyModel.objects.create({
+        name: 'UpdateInstanceTest',
+        value: 40,
+        related: relatedInstance.pk
+      });
+      
+      const querySet = DummyModel.objects.filter({ id: instance.pk });
+      const updated = await QueryExecutor.execute(querySet, 'update_instance', { data: { value: 50 }});
+      
+      expect(updated).toBeTruthy();
+      expect(updated.name).toBe('UpdateInstanceTest');
+      expect(updated.value).toBe(50);
+      
+      // Verify instance was actually updated in the database
+      const fromDb = await DummyModel.objects.get({ id: instance.pk });
+      expect(fromDb.value).toBe(50);
+    });
   });
 
   // executeDelete tests
-  describe('executeDelete', () => {
+  describe('delete operations', () => {
     it('should delete all matching records', async () => {
       // Create multiple test instances
       await DummyModel.objects.create({
@@ -486,7 +527,7 @@ describe('executeOrCreate', () => {
       expect(beforeCount).toBe(2);
       
       const querySet = DummyModel.objects.filter({ name__startswith: 'DeleteTest' });
-      const [deletedCount, mapping] = await QueryExecutor.executeDelete(querySet);
+      const [deletedCount, mapping] = await QueryExecutor.execute(querySet, 'delete');
       
       expect(deletedCount).toBe(2);
       expect(mapping).toHaveProperty('django_app.dummymodel');
@@ -499,63 +540,13 @@ describe('executeOrCreate', () => {
 
     it('should return zero when no records match', async () => {
       const querySet = DummyModel.objects.filter({ name: 'NonExistentRecord' });
-      const [deletedCount, mapping] = await QueryExecutor.executeDelete(querySet);
+      const [deletedCount, mapping] = await QueryExecutor.execute(querySet, 'delete');
       
       expect(deletedCount).toBe(0);
       expect(mapping).toHaveProperty('django_app.dummymodel');
       expect(mapping['django_app.dummymodel']).toBe(0);
     });
-  });
 
-  // executeCreate tests
-  describe('executeCreate', () => {
-    it('should create a new instance', async () => {
-      const querySet = DummyModel.objects.all();
-
-      let data = {
-        name: 'CreateTest',
-        value: 30,
-        related: relatedInstance.pk
-      }
-      
-      const instance = await QueryExecutor.executeCreate(querySet, 'create', { data });
-      
-      expect(instance).toBeTruthy();
-      expect(instance.name).toBe('CreateTest');
-      expect(instance.value).toBe(30);
-      expect(instance.related.id).toBe(relatedInstance.pk);
-      
-      // Verify instance was actually created in the database
-      const exists = await DummyModel.objects.filter({ name: 'CreateTest' }).exists();
-      expect(exists).toBe(true);
-    });
-  });
-
-  // executeUpdateInstance tests
-  describe('executeUpdateInstance', () => {
-    it('should update a specific instance', async () => {
-      // Create a test instance
-      const instance = await DummyModel.objects.create({
-        name: 'UpdateInstanceTest',
-        value: 40,
-        related: relatedInstance.pk
-      });
-      
-      const querySet = DummyModel.objects.filter({ id: instance.pk });
-      const updated = await QueryExecutor.executeUpdateInstance(querySet, 'update_instance', { data: { value: 50 }});
-      
-      expect(updated).toBeTruthy();
-      expect(updated.name).toBe('UpdateInstanceTest');
-      expect(updated.value).toBe(50);
-      
-      // Verify instance was actually updated in the database
-      const fromDb = await DummyModel.objects.get({ id: instance.pk });
-      expect(fromDb.value).toBe(50);
-    });
-  });
-
-  // executeDeleteInstance tests
-  describe('executeDeleteInstance', () => {
     it('should delete a specific instance', async () => {
       // Create a test instance
       const instance = await DummyModel.objects.create({
@@ -565,7 +556,7 @@ describe('executeOrCreate', () => {
       });
       
       const querySet = DummyModel.objects.filter({ id: instance.pk });
-      const [deletedCount, mapping] = await QueryExecutor.executeDeleteInstance(querySet, 'delete_instance', { id: instance.pk });
+      const [deletedCount, mapping] = await QueryExecutor.execute(querySet, 'delete_instance', { id: instance.pk });
       
       expect(deletedCount).toBe(1);
       expect(mapping).toHaveProperty('django_app.dummymodel');
@@ -578,44 +569,7 @@ describe('executeOrCreate', () => {
   });
 
   // execute tests
-  describe('execute', () => {
-    it('should execute the appropriate operation based on the operationType', async () => {
-      // Create test instances
-      await DummyModel.objects.create({
-        name: 'ExecuteTest1',
-        value: 70,
-        related: relatedInstance.pk
-      });
-      
-      await DummyModel.objects.create({
-        name: 'ExecuteTest2',
-        value: 80,
-        related: relatedInstance.pk
-      });
-      
-      // Test different operation types
-      
-      // Get operation
-      const querySet1 = DummyModel.objects.filter({ name: 'ExecuteTest1' });
-      const getResult = await QueryExecutor.execute(querySet1, 'get');
-      expect(getResult.name).toBe('ExecuteTest1');
-      
-      // Read/List operation
-      const querySet2 = DummyModel.objects.filter({ name__startswith: 'ExecuteTest' });
-      const listResult = await QueryExecutor.execute(querySet2, 'list');
-      expect(listResult.length).toBe(2);
-      
-      // Count operation
-      const querySet3 = DummyModel.objects.filter({ name__startswith: 'ExecuteTest' });
-      const countResult = await QueryExecutor.execute(querySet3, 'count');
-      expect(countResult).toBe(2);
-      
-      // Exists operation
-      const querySet4 = DummyModel.objects.filter({ name: 'ExecuteTest1' });
-      const existsResult = await QueryExecutor.execute(querySet4, 'exists');
-      expect(existsResult).toBe(true);
-    });
-
+  describe('execute method', () => {
     it('should throw an error for invalid operation type', async () => {
       const querySet = DummyModel.objects.filter({ name: 'Test' });
       await expect(QueryExecutor.execute(querySet, 'invalid_operation'))

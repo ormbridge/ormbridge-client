@@ -1,10 +1,11 @@
-import { describe, test, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, test, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { Product } from '../../models/backend1/django_app/product';
 import { Order } from '../../models/backend1/django_app/order';
 import { OrderItem } from '../../models/backend1/django_app/orderitem';
 import { ProductCategory } from '../../models/backend1/django_app/productcategory';
 import { setBackendConfig } from '../../src/config';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader'
+import { cleanupEventHandler, initEventHandler } from '../../src/syncEngine/stores/operationEventHandlers';
 
 describe('StateZero Custom Features Integration Tests', () => {
   let originalConfig: any;
@@ -19,6 +20,7 @@ describe('StateZero Custom Features Integration Tests', () => {
       // ...any other backend config details
     };
     setBackendConfig('default', originalConfig);
+    initEventHandler()
   });
 
   beforeEach(async () => {
@@ -41,6 +43,10 @@ describe('StateZero Custom Features Integration Tests', () => {
     await OrderItem.objects.all().delete();
     setBackendConfig('default', originalConfig);
   });
+
+  afterAll(async () => {
+    cleanupEventHandler()
+  })
 
   describe('Custom Querysets', () => {
     test('ActiveProductsQuerySet returns only in-stock products', async () => {

@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { DummyModel } from '../../models/backend1/django_app/dummymodel';
 import { DummyRelatedModel } from '../../models/backend1/django_app/dummyrelatedmodel';
 import { setBackendConfig } from '../../src/config';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader'
+import { initEventHandler, cleanupEventHandler } from '../../src/syncEngine/stores/operationEventHandlers';
 import { 
   DoesNotExist, 
   ValidationError, 
@@ -23,6 +24,7 @@ describe('Immutable QuerySet Tests', () => {
       })
     };
     setBackendConfig('default', originalConfig);
+    initEventHandler()
   });
 
   beforeEach(async () => {
@@ -67,6 +69,10 @@ describe('Immutable QuerySet Tests', () => {
     // Reset config after each test
     setBackendConfig('default', originalConfig);
   });
+
+  afterAll(async () => {
+    cleanupEventHandler()
+  })
 
   it('should not modify original queryset when derived queryset is filtered', async () => {
     // Create a base queryset with a name filter

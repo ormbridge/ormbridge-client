@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { DeepModelLevel1 } from '../../models/backend1/django_app/deepmodellevel1';
 import { DeepModelLevel2 } from '../../models/backend1/django_app/deepmodellevel2'
 import { DeepModelLevel3 } from '../../models/backend1/django_app/deepmodellevel3';
@@ -6,6 +6,7 @@ import { ComprehensiveModel } from '../../models/backend1/django_app/comprehensi
 import { setBackendConfig } from '../../src/config';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader';
 import { modelStoreRegistry } from '../../src/syncEngine/registries/modelStoreRegistry';
+import { initEventHandler, cleanupEventHandler } from '../../src/syncEngine/stores/operationEventHandlers';
 
 describe('Many-to-Many Field Selection Tests', () => {
   let originalConfig: any;
@@ -18,6 +19,7 @@ describe('Many-to-Many Field Selection Tests', () => {
       })
     };
     setBackendConfig('default', originalConfig);
+    initEventHandler()
   });
 
   beforeEach(async () => {
@@ -33,6 +35,10 @@ describe('Many-to-Many Field Selection Tests', () => {
     await ComprehensiveModel.objects.all().delete();
     setBackendConfig('default', originalConfig);
   });
+
+  afterAll(async () => {
+    cleanupEventHandler()
+  })
 
   it('should correctly retrieve many-to-many related models with selective fields', async () => {
     // Create two ComprehensiveModel instances.

@@ -3,6 +3,7 @@ import { getConfig } from '../../config.js';
 import { ValidationError } from './errors.js';
 import { modelStoreRegistry } from '../../syncEngine/registries/modelStoreRegistry.js';
 import { isNil } from 'lodash-es';
+import { QueryExecutor } from './queryExecutor.js';
 
 /**
  * A constructor for a Model.
@@ -182,29 +183,28 @@ export class Model {
    */
   async save() {
     const ModelClass = this.constructor;
+    const querySet = ModelClass.objects.newQuerySet();
     
     if (!this.pk) {
       // Create new instance
-      const result = await ModelClass.objects.newQuerySet().executeQuery({
-        type: 'create',
-        data: this.serialize()
-      });
-      const newInstance = ModelClass.from(result.data);
-      this.#_pk = newInstance[ModelClass.primaryKeyField]
-      this.#_data = {}
-
-    } else {
-      // Update existing instance
-      const result = await ModelClass.objects.newQuerySet().executeQuery({
-        type: 'update_instance',
-        filter: {
-          type: 'filter',
-          conditions: { [ModelClass.primaryKeyField]: this.pk }
-        },
+      const instance = await QueryExecutor.execute(querySet, 'create', {
         data: this.serialize()
       });
       
-      const newInstance = ModelClass.from(result.data);
+      this.#_pk = instance.pk;
+      this.#_data = {}; // Clear local data as it's now in the store
+    } else {
+      // Update existing instance
+      const querySetWithFilter = ModelClass.objects.newQuerySet().filter({ 
+        [ModelClass.primaryKeyField]: this.pk 
+      });
+      
+      await QueryExecutor.execute(querySetWithFilter, 'update_instance', {
+        data: this.serialize()
+      });
+      
+      // Clear local data as it's now updated in the store
+      this.#_data = {};
     }
     
     return this;
@@ -225,20 +225,13 @@ export class Model {
     }
     
     const ModelClass = this.constructor;
-    const modelName = ModelClass.modelName;
-    const response = await ModelClass.objects.newQuerySet().executeQuery({
-      type: 'delete_instance',
-      filter: {
-        type: 'filter',
-        conditions: { [ModelClass.primaryKeyField]: this.pk }
-      }
+    const querySet = ModelClass.objects.newQuerySet().filter({ 
+      [ModelClass.primaryKeyField]: this.pk 
     });
     
-    // The ASTParser._handle_delete_instance method returns the deleted count in response.data
-    const deletedCount = response.data ? Number(response.data) : 0;
-    
-    // Format the response like Django's delete() return value
-    return [deletedCount, { [modelName]: deletedCount }];
+    return await QueryExecutor.execute(querySet, 'delete_instance', {
+      [ModelClass.primaryKeyField]: this.pk
+    });
   }
 
   /**
@@ -251,12 +244,17 @@ export class Model {
     if (!this.pk) {
       throw new Error('Cannot refresh unsaved instance');
     }
+    
     const ModelClass = this.constructor;
-    const fresh = await ModelClass.objects.get({ [ModelClass.primaryKeyField]: this.pk });
+    const querySet = ModelClass.objects.newQuerySet().filter({
+      [ModelClass.primaryKeyField]: this.pk
+    });
+    
+    const fresh = await QueryExecutor.execute(querySet, 'get');
     
     // Update all fields from the fresh instance
     for (const field of ModelClass.fields) {
-      if (fresh.getField(field) !== undefined) {
+      if (fresh && fresh.getField(field) !== undefined) {
         this.setField(field, fresh.getField(field));
       }
     }

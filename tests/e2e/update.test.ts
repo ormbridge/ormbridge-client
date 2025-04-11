@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { DummyModel } from '../../models/backend1/django_app/dummymodel';
 import { DummyRelatedModel } from '../../models/backend1/django_app/dummyrelatedmodel';
 import { setBackendConfig } from '../../src/config';
 import { ValidationError, DoesNotExist } from '../../src/flavours/django/errors';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader'
+import { initEventHandler, cleanupEventHandler } from '../../src/syncEngine/stores/operationEventHandlers';
 
 describe('update() Method Tests (Revised)', () => {
   let relatedInstance: any;
@@ -17,6 +18,7 @@ describe('update() Method Tests (Revised)', () => {
       })
     };
     setBackendConfig('default', originalConfig);
+    initEventHandler()
   });
 
   beforeEach(async () => {
@@ -37,6 +39,9 @@ describe('update() Method Tests (Revised)', () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
   });
 
+  afterAll(async () => {
+    cleanupEventHandler()
+  })
   // ------------------------------------------------------------
   // Instance save() method tests.
   // ------------------------------------------------------------

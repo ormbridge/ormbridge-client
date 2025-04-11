@@ -5,6 +5,7 @@ import { setBackendConfig } from '../../src/config';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader'
 import { ValidationError } from '../../src/flavours/django/errors';
 import { Q } from '../../src/flavours/django/q';
+import { initEventHandler, cleanupEventHandler } from '../../src/syncEngine/stores/operationEventHandlers';
 
 describe('QuerySet Filter & Exclude Tests', () => {
   let relatedInstance: any;
@@ -18,6 +19,7 @@ describe('QuerySet Filter & Exclude Tests', () => {
       })
     };
     setBackendConfig('default', originalConfig);
+    initEventHandler()
   });
 
   beforeEach(async () => {
@@ -37,6 +39,10 @@ describe('QuerySet Filter & Exclude Tests', () => {
     await DummyRelatedModel.objects.all().delete();
     setBackendConfig('default', originalConfig);
   });
+
+  afterAll(async () => {
+    cleanupEventHandler()
+  })
 
   it('should return correct records with basic filter conditions', async () => {
     await DummyModel.objects.create({ name: 'FilterTest1', value: 10, related: relatedInstance.pk });

@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { DummyModel } from '../../models/backend1/django_app/dummymodel';
 import { setBackendConfig } from '../../src/config';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader'
+import { initEventHandler, cleanupEventHandler } from '../../src/syncEngine/stores/operationEventHandlers';
 
 describe('QuerySet Search Tests', () => {
   let originalConfig: any;
@@ -14,6 +15,7 @@ describe('QuerySet Search Tests', () => {
       })
     };
     setBackendConfig('default', originalConfig);
+    initEventHandler()
   });
 
   beforeEach(async () => {
@@ -26,6 +28,10 @@ describe('QuerySet Search Tests', () => {
     await DummyModel.objects.all().delete();
     setBackendConfig('default', originalConfig);
   });
+
+  afterAll(async () => {
+    cleanupEventHandler()
+  })
 
   it('should return matching record when search query is provided without searchFields', async () => {
     // DummyModel config searchable_fields = {"name"}

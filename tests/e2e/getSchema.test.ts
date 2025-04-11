@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { DummyModel } from '../../models/backend1/django_app/dummymodel';
 import { setBackendConfig } from '../../src/config';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader';
+import { initEventHandler, cleanupEventHandler } from '../../src/syncEngine/stores/operationEventHandlers';
 
 describe('getSchema Method Tests', () => {
   let originalConfig;
@@ -13,6 +14,7 @@ describe('getSchema Method Tests', () => {
         'Authorization': 'Token testtoken123'
       })
     };
+    initEventHandler()
   });
 
   beforeEach(() => {
@@ -24,6 +26,10 @@ describe('getSchema Method Tests', () => {
     // Reset config after each test
     setBackendConfig('default', originalConfig);
   });
+
+  afterAll(() => {
+    cleanupEventHandler()
+  })
 
   it('should successfully retrieve schema information', async () => {
     // Execute the method against the real server

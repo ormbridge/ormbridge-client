@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { setBackendConfig } from '../../src/config';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader'
 import { CustomPKModel } from '../../models/backend1/django_app/custompkmodel';
 import { ModelWithCustomPKRelation } from '../../models/backend1/django_app/modelwithcustompkrelation';
 import { NameFilterCustomPKModel } from '../../models/backend1/django_app/namefiltercustompkmodel';
 import { DoesNotExist, PermissionDenied } from '../../src/flavours/django/errors';
+import { initEventHandler, cleanupEventHandler } from '../../src/syncEngine/stores/operationEventHandlers';
 
 const adminConfig = {
   getAuthHeaders: () => ({
@@ -25,6 +26,7 @@ describe('Permission and Custom PK Tests (admin user)', () => {
     loadConfigFromFile();
     originalConfig = adminConfig;
     setBackendConfig('default', originalConfig);
+    initEventHandler()
   });
 
   beforeEach(async () => {
@@ -52,6 +54,10 @@ describe('Permission and Custom PK Tests (admin user)', () => {
     }
     setBackendConfig('default', adminConfig);
   });
+
+  afterAll(async () => {
+    cleanupEventHandler()
+  })
 
   // --- ReadOnlyPermission Tests for CustomPKModel (admin) ---
   describe('ReadOnlyPermission Tests (admin)', () => {

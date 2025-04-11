@@ -4,6 +4,7 @@ import { DeepModelLevel2 } from '../../models/backend1/django_app/deepmodellevel
 import { DeepModelLevel3 } from '../../models/backend1/django_app/deepmodellevel3';
 import { setBackendConfig } from '../../src/config';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader';
+import { initEventHandler, cleanupEventHandler } from '../../src/syncEngine/stores/operationEventHandlers';
 
 describe('Nested Field Selection Tests', () => {
   let originalConfig: any;
@@ -16,6 +17,7 @@ describe('Nested Field Selection Tests', () => {
       })
     };
     setBackendConfig('default', originalConfig);
+    initEventHandler()
   });
 
   beforeEach(async () => {
@@ -33,6 +35,10 @@ describe('Nested Field Selection Tests', () => {
     await DeepModelLevel3.objects.all().delete();
     setBackendConfig('default', originalConfig);
   });
+
+  afterAll(async () => {
+    cleanupEventHandler()
+  })
 
   it('should correctly retrieve nested model instance with selective fields', async () => {
     // Create instances for the deep models

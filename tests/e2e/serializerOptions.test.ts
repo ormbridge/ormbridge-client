@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { setBackendConfig } from '../../src/config';
 import { DummyModel } from '../../models/backend1/django_app/dummymodel';
 import { loadConfigFromFile } from '../../src/cli/configFileLoader'
+import { initEventHandler, cleanupEventHandler } from '../../src/syncEngine/stores/operationEventHandlers';
 
 describe('Aggregation Integration Tests', () => {
   let originalConfig: any;
@@ -21,6 +22,7 @@ describe('Aggregation Integration Tests', () => {
       })
     };
     setBackendConfig('default', originalConfig);
+    initEventHandler()
   });
 
   beforeEach(async () => {
@@ -39,6 +41,10 @@ describe('Aggregation Integration Tests', () => {
     // Clean up after each test.
     await DummyModel.objects.all().delete();
   });
+
+  afterAll(async () => {
+    cleanupEventHandler()
+  })
 
   it('should return correct count', async () => {
     const count = await DummyModel.objects.filter({ name__startswith: 'AggTest' }).count();

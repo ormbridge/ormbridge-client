@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { DummyModel } from '../../models/backend1/django_app/dummymodel';
 import { DummyRelatedModel } from '../../models/backend1/django_app/dummyrelatedmodel';
 import { setBackendConfig } from '../../src/config';
@@ -11,6 +11,7 @@ import {
   ConfigError 
 } from '../../src/flavours/django/errors';
 import { ResultTuple } from '../../src/flavours/django/manager';
+import { initEventHandler, cleanupEventHandler } from '../../src/syncEngine/stores/operationEventHandlers';
 
 describe('updateOrCreate() Method Tests', () => {
   let relatedInstance: any;
@@ -24,6 +25,7 @@ describe('updateOrCreate() Method Tests', () => {
       })
     };
     setBackendConfig('default', originalConfig);
+    initEventHandler()
   });
 
   beforeEach(async () => {
@@ -46,6 +48,10 @@ describe('updateOrCreate() Method Tests', () => {
     // Reset config after each test
     setBackendConfig('default', originalConfig);
   });
+
+  afterAll(async () => {
+    cleanupEventHandler()
+  })
 
   // Basic Functionality Tests
   it('should create a new instance when it does not exist', async () => {
