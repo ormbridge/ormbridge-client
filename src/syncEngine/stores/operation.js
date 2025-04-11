@@ -19,6 +19,7 @@ export class Operation {
     status;
     instances;
     queryset; // for info/routing only
+    args; // extra data e.g lookup fields for get_or_create
     timestamp;
 
     constructor(data) {
@@ -36,6 +37,7 @@ export class Operation {
         this.type = data.type;
         this.status = data.status || 'inflight';
         this.queryset = data.queryset
+        this.args = data.args
         let ModelClass = this.queryset.ModelClass
         
         let instances = data.instances

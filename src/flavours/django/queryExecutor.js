@@ -47,9 +47,10 @@ export class QueryExecutor {
      * @param {QuerySet} querySet - The QuerySet to execute.
      * @param {string} operationType - The type of operation to perform.
      * @param {Object} args - Additional arguments for the operation.
+     * @param {string} operationId - A unique id for the operation
      * @returns {Promise<Object>} The API response.
      */
-    static async _makeApiCall(querySet, operationType, args = {}) {
+    static async _makeApiCall(querySet, operationType, args = {}, operationId) {
         const ModelClass = querySet.ModelClass;
         const config = getConfig();
         const backend = config.backendConfigs[ModelClass.configKey];
@@ -83,6 +84,10 @@ export class QueryExecutor {
         const baseUrl = backend.API_URL.replace(/\/+$/, '');
         const finalUrl = `${baseUrl}/${ModelClass.modelName}/`;
         const headers = backend.getAuthHeaders ? backend.getAuthHeaders() : {};
+
+        if (operationId) {
+          headers['X-Operation-ID'] = operationId;
+        }
         
         try {
             let response = await axios.post(finalUrl, payload, { headers });
@@ -191,28 +196,49 @@ export class QueryExecutor {
      * @returns {Promise<ResultTuple>} Tuple with instance and created flag.
      */
     static async executeOrCreate(querySet, operationType, args = {}) {
-      // get_or_create, update_or_create
-      let ModelClass = querySet.ModelClass;
-
+      const ModelClass = querySet.ModelClass;
+      const primaryKeyField = ModelClass.primaryKeyField;
+      const operationId = `${uuid7()}`;
+      
       const apiCallArgs = {
         lookup: args.lookup || {},
         defaults: args.defaults || {}
       };
       
-      // Pass args to _makeApiCall
-      const response = await this._makeApiCall(querySet, operationType, apiCallArgs);
+      // Create an operation record
+      const operation = new Operation({
+        operationId,
+        type: operationType,
+        instances: [{ [primaryKeyField]: operationId }],
+        queryset: querySet,
+        args: apiCallArgs
+      });
+      
+      let response;
+      try {
+        response = await this._makeApiCall(querySet, operationType, apiCallArgs, operation.operationId);
+      } catch (error) {
+        operation.updateStatus('rejected');
+        throw error;
+      }
+      
+      // Handle the response
       let { data, included } = response.data;
-      let created = response.metadata.created;
+      const created = response.metadata.created;
       
       if (isNil(data)) {
+        operation.updateStatus('rejected');
         throw new Error(`Invalid response for ${operationType} operation. Expected data to be present.`);
       }
       
-      // Process included entities
-      this._injestIncludedEntities(included, ModelClass);
+      // Update operation status to confirmed
+      operation.mutate({
+        instances: [data],
+        status: 'confirmed',
+      });
       
-      // Create the instance with full data
-      let instance = new ModelClass(data);
+      // Create the instance from the data
+      const instance = ModelClass.from(data, false);
       
       // Return a ResultTuple with the instance and created flag
       return new ResultTuple(instance, created);
@@ -289,7 +315,7 @@ export class QueryExecutor {
       
       let response;
       try {
-        response = await this._makeApiCall(querySet, operationType, apiCallArgs);
+        response = await this._makeApiCall(querySet, operationType, apiCallArgs, operation.operationId);
       } catch (error) {
         operation.updateStatus('rejected');
         throw error;
@@ -330,7 +356,7 @@ export class QueryExecutor {
         
         let response;
         try {
-          response = await this._makeApiCall(querySet, operationType, apiCallArgs);
+          response = await this._makeApiCall(querySet, operationType, apiCallArgs, operation.operationId);
         } catch (err){
           operation.updateStatus('rejected')
           throw err
@@ -377,7 +403,7 @@ export class QueryExecutor {
       
       let response;
       try {
-          response = await this._makeApiCall(querySet, operationType, apiCallArgs);
+          response = await this._makeApiCall(querySet, operationType, apiCallArgs, operation.operationId);
       } catch (error) {
           operation.updateStatus('rejected');
           throw error;
@@ -423,7 +449,7 @@ export class QueryExecutor {
       
       let response;
       try {
-        response = await this._makeApiCall(querySet, operationType, apiCallArgs);
+        response = await this._makeApiCall(querySet, operationType, apiCallArgs, operation.operationId);
       } catch (error) {
         operation.updateStatus('rejected');
         throw error;
@@ -465,7 +491,7 @@ export class QueryExecutor {
     
     let response;
     try {
-      response = await this._makeApiCall(querySet, operationType, apiCallArgs);
+      response = await this._makeApiCall(querySet, operationType, apiCallArgs, operation.operationId);
     } catch (err){
       operation.updateStatus('rejected')
       throw err
@@ -507,7 +533,7 @@ export class QueryExecutor {
       
       let response;
       try {
-          response = await this._makeApiCall(querySet, operationType, args);
+          response = await this._makeApiCall(querySet, operationType, args, operation.operationId);
       } catch (error) {
           operation.updateStatus('rejected');
           throw error;

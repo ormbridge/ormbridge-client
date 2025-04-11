@@ -1,7 +1,8 @@
 import { Operation } from './operation.js';
 import { makeObservable, observable, action, computed, reaction } from 'mobx';
 import { computedFn } from 'mobx-utils';
-import { type } from 'os';
+import sift from 'sift';
+import { isNil } from 'lodash-es'
 
 export class ModelStore {
     modelClass;
@@ -142,6 +143,7 @@ export class ModelStore {
                     queryset: op.queryset,
                     type: op.type,
                     status: op.status,
+                    args: op.args
                  });
             }
         }
@@ -164,6 +166,95 @@ export class ModelStore {
         return groundTruthMap;
     }
 
+    /**
+     * Handles get_or_create operation in optimistic updates
+     * 
+     * @param {Object} operation - The operation object
+     * @param {Map} currentInstances - Map of current instances
+     * @param {Object} instance - Current instance being processed
+     * @param {any} pk - Primary key of the instance
+     * @private
+     */
+    _handleGetOrCreate(operation, currentInstances, instance, pk) {
+        if (!operation.args?.lookup) {
+            // Lookup is required for get_or_create, do nothing if not provided
+            console.warn(`[ModelStore ${this.modelClass.modelName}] Missing required lookup fields for get_or_create operation ${operation.operationId}. Operation will be ignored for optimistic updates.`);
+            return;
+        }
+        
+        const pkField = this.pkField;
+        const lookup = operation.args.lookup;
+        const defaults = operation.args.defaults || {};
+        
+        // Try to find an existing instance that matches all lookup fields
+        const matchingInstance = this._findMatchingInstance(currentInstances, lookup);
+
+        if (isNil(matchingInstance)) {
+            // No matching instance found, create a new one
+            const newInstance = { ...lookup, ...defaults, [pkField]: pk };
+            currentInstances.set(pk, newInstance);
+        }
+        // If matching instance found, do nothing (get_or_create doesn't modify existing)
+    }
+
+    /**
+     * Handles update_or_create operation in optimistic updates
+     * 
+     * @param {Object} operation - The operation object
+     * @param {Map} currentInstances - Map of current instances
+     * @param {Object} instance - Current instance being processed
+     * @param {any} pk - Primary key of the instance
+     * @private
+     */
+    _handleUpdateOrCreate(operation, currentInstances, instance, pk) {
+        if (!operation.args?.lookup) {
+            // Lookup is required for update_or_create, do nothing if not provided
+            console.warn(`[ModelStore ${this.modelClass.modelName}] Missing required lookup fields for update_or_create operation ${operation.operationId}. Operation will be ignored for optimistic updates.`);
+            return;
+        }
+        
+        const pkField = this.pkField;
+        const lookup = operation.args.lookup;
+        const defaults = operation.args.defaults || {};
+        
+        // Try to find an existing instance that matches all lookup fields
+        const matchResult = this._findMatchingInstance(currentInstances, lookup, true);
+        
+        if (matchResult.instance) {
+            // Found matching instance, update it with defaults
+            currentInstances.set(matchResult.key, { ...matchResult.instance, ...defaults });
+        } else {
+            // No matching instance found, create a new one
+            const newInstance = { ...lookup, ...defaults, [pkField]: pk };
+            currentInstances.set(pk, newInstance);
+        }
+    }
+
+    /**
+     * Finds an instance matching lookup criteria using sift.js
+     * 
+     * @param {Map} currentInstances - Map of current instances
+     * @param {Object} lookup - Lookup fields to match
+     * @returns {Object} - Object containing matching instance and its key, or nulls if no match
+     * @private
+     */
+    _findMatchingInstance(currentInstances, lookup) {
+        // Convert instances Map to array of [key, instance] pairs
+        const instancesArray = Array.from(currentInstances.entries());
+        
+        // Use sift.js to find the first matching instance
+        const matchingPair = instancesArray.find(([_, instance]) => sift(lookup)(instance));
+        
+        if (matchingPair) {
+            return {
+                key: matchingPair[0],
+                instance: matchingPair[1]
+            };
+        }
+        
+        return null
+    }
+
     applyOperation(operation, currentInstances) {
         const pkField = this.pkField;
         for (const instance of operation.instances) {
@@ -175,10 +266,12 @@ export class ModelStore {
 
             switch (operation.type) {
                 case 'create':
-                case 'get_or_create':
                     if (!currentInstances.has(pk)) {
                         currentInstances.set(pk, instance);
                     }
+                    break;
+                case 'get_or_create':
+                    this._handleGetOrCreate(operation, currentInstances, instance, pk);
                     break;
                 case 'update_instance':
                 case 'update': {
@@ -198,12 +291,7 @@ export class ModelStore {
                     break;
                 }
                 case 'update_or_create': {
-                    const existing = currentInstances.get(pk);
-                    if (existing) {
-                        currentInstances.set(pk, { ...existing, ...instance });
-                    } else {
-                        currentInstances.set(pk, instance);
-                    }
+                    this._handleUpdateOrCreate(operation, currentInstances, instance, pk);
                     break;
                 }
                 case 'delete_instance':

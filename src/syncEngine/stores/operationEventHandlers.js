@@ -53,10 +53,20 @@ function handleOperationMutated(operation) {
     modelStore.updateOperation(operation);
   }
   
-  // Update in QuerysetStore
-  const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
-  if (querysetStore) {
-    querysetStore.updateOperation(operation);
+  // For update and delete operations, apply to all querysets for this model
+  // For create operations, only apply to the originating queryset
+  if (operation.operationType === 'create') {
+    // Update in originating QuerysetStore only
+    const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
+    if (querysetStore) {
+      querysetStore.updateOperation(operation);
+    }
+  } else if (operation.operationType === 'update' || operation.operationType === 'delete') {
+    // Update in ALL QuerysetStores for this model
+    const allQuerysetStores = querysetStoreRegistry.getAllStoresForModel(ModelClass);
+    allQuerysetStores.forEach(store => {
+      store.updateOperation(operation);
+    });
   }
   
   console.log(`Operation mutated for ${ModelClass.modelName}:`, operation.operationId);
@@ -80,12 +90,20 @@ function handleOperationCreated(operation) {
     modelStore.addOperation(operation);
   }
   
-  // Add to affected QuerysetStore
-  // The queryset on the operation is the queryset that created the operation
-  // We can get the store from the registry using this queryset
-  const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
-  if (querysetStore) {
-    querysetStore.addOperation(operation);
+  // For create operations, only add to the originating queryset
+  // For all other operation types, add to all querysets for this model
+  if (operation.operationType === 'create') {
+    // Add to originating QuerysetStore only
+    const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
+    if (querysetStore) {
+      querysetStore.addOperation(operation);
+    }
+  } else {
+    // Add to ALL QuerysetStores for this model
+    const allQuerysetStores = querysetStoreRegistry.getAllStoresForModel(ModelClass);
+    allQuerysetStores.forEach(store => {
+      store.addOperation(operation);
+    });
   }
   
   console.log(`Operation created for ${ModelClass.modelName}:`, operation.operationId);
@@ -106,10 +124,20 @@ function handleOperationUpdated(operation) {
     modelStore.updateOperation(operation);
   }
   
-  // Update in QuerysetStore
-  const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
-  if (querysetStore) {
-    querysetStore.updateOperation(operation);
+  // For create operations, only update in the originating queryset
+  // For all other operation types, update in all querysets for this model
+  if (operation.operationType === 'create') {
+    // Update in originating QuerysetStore only
+    const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
+    if (querysetStore) {
+      querysetStore.updateOperation(operation);
+    }
+  } else {
+    // Update in ALL QuerysetStores for this model
+    const allQuerysetStores = querysetStoreRegistry.getAllStoresForModel(ModelClass);
+    allQuerysetStores.forEach(store => {
+      store.updateOperation(operation);
+    });
   }
   
   console.log(`Operation updated for ${ModelClass.modelName}:`, operation.operationId);
@@ -130,10 +158,20 @@ function handleOperationConfirmed(operation) {
     modelStore.confirm(operation.operationId, operation.instances);
   }
   
-  // Confirm in QuerysetStore
-  const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
-  if (querysetStore) {
-    querysetStore.confirm(operation.operationId, operation.instances);
+  // For create operations, only confirm in the originating queryset
+  // For all other operation types, confirm in all querysets for this model
+  if (operation.operationType === 'create') {
+    // Confirm in originating QuerysetStore only
+    const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
+    if (querysetStore) {
+      querysetStore.confirm(operation.operationId, operation.instances);
+    }
+  } else {
+    // Confirm in ALL QuerysetStores for this model
+    const allQuerysetStores = querysetStoreRegistry.getAllStoresForModel(ModelClass);
+    allQuerysetStores.forEach(store => {
+      store.confirm(operation.operationId, operation.instances);
+    });
   }
   
   console.log(`Operation confirmed for ${ModelClass.modelName}:`, operation.operationId);
@@ -154,10 +192,20 @@ function handleOperationRejected(operation) {
     modelStore.reject(operation.operationId);
   }
   
-  // Reject in QuerysetStore
-  const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
-  if (querysetStore) {
-    querysetStore.reject(operation.operationId);
+  // For create operations, only reject in the originating queryset
+  // For all other operation types, reject in all querysets for this model
+  if (operation.operationType === 'create') {
+    // Reject in originating QuerysetStore only
+    const querysetStore = querysetStoreRegistry.getStore(operation.queryset);
+    if (querysetStore) {
+      querysetStore.reject(operation.operationId);
+    }
+  } else {
+    // Reject in ALL QuerysetStores for this model
+    const allQuerysetStores = querysetStoreRegistry.getAllStoresForModel(ModelClass);
+    allQuerysetStores.forEach(store => {
+      store.reject(operation.operationId);
+    });
   }
   
   console.log(`Operation rejected for ${ModelClass.modelName}:`, operation.operationId);

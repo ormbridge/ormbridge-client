@@ -1,4 +1,5 @@
 import { Operation } from './operation.js';
+import { modelStoreRegistry } from '../registries/modelStoreRegistry.js';
 
 export class QuerysetStore {
     modelClass;
@@ -89,6 +90,13 @@ export class QuerysetStore {
 
     applyOperation(operation, currentPks) {
         const pkField = this.pkField;
+
+        // Special handling for get_or_create and update_or_create
+        if ((operation.type === 'get_or_create' || operation.type === 'update_or_create') && 
+            operation.args?.lookup && operation.instances && operation.instances.length > 0) {
+            return this._handleSpecialOperation(operation, currentPks);
+        }
+
         for (const instance of operation.instances) {
              if (!instance || typeof instance !== 'object' || !(pkField in instance)) {
                 console.warn(`[QuerysetStore ${this.modelClass.modelName}] Skipping instance in operation ${operation.operationId} due to missing PK field '${String(pkField)}' or invalid format.`);
@@ -120,6 +128,45 @@ export class QuerysetStore {
                     console.error(`[QuerysetStore ${this.modelClass.modelName}] Unknown operation type: ${operation.type}`);
             }
         }
+        return currentPks;
+    }
+
+    /**
+     * Handles get_or_create and update_or_create operations using ModelStore
+     */
+    _handleSpecialOperation(operation, currentPks) {
+        // Get the ModelStore for this model class
+        const modelStore = modelStoreRegistry.getStore(this.modelClass);
+        const pkField = this.pkField;
+        
+        // Get current instances based on our current PKs
+        const currentPksArray = Array.from(currentPks);
+        const currentInstances = new Map();
+        
+        // Convert current rendered instances to a Map
+        const modelInstances = modelStore.render(currentPksArray);
+        for (const instance of modelInstances) {
+            currentInstances.set(instance[pkField], instance);
+        }
+        
+        // Get instance from operation
+        const instance = operation.instances[0];
+        const pk = instance[pkField];
+        
+        // Create a copy of currentInstances to work with
+        const workingInstances = new Map(currentInstances);
+        
+        // Apply the operation using ModelStore's specialized methods
+        if (operation.type === 'get_or_create') {
+            modelStore._handleGetOrCreate(operation, workingInstances, instance, pk);
+        } else if (operation.type === 'update_or_create') {
+            modelStore._handleUpdateOrCreate(operation, workingInstances, instance, pk);
+        }
+        
+        if (workingInstances.has(pk) && !currentPks.has(pk)){
+            currentPks.add(pk)
+        }
+        
         return currentPks;
     }
 

@@ -137,6 +137,18 @@ class QuerysetStoreRegistry {
     );
     return instances;
   }
+
+  /**
+   * Get all queryset stores for a specific model class
+   * @param {ModelClass} ModelClass - The model class to get stores for
+   * @returns {Array} - Array of queryset stores for this model
+   */
+  getAllStoresForModel(ModelClass) {
+    if (!ModelClass) return [];
+    return Array.from(this._stores.values()).filter(store => 
+      store?.queryset?.ModelClass === ModelClass
+    );
+  }
 }
 
 export const querysetStoreRegistry = new QuerysetStoreRegistry();
